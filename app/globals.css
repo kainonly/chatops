@@ -1,5 +1,31 @@
 @import "tailwindcss";
-@import "./chat.css";
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  font-weight: 400;
+  font-style: normal;
+  src: url("@fontpkg/alibaba-puhuiti-3-0/AlibabaPuHuiTi-3-55-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  font-weight: 500;
+  font-style: normal;
+  src: url("@fontpkg/alibaba-puhuiti-3-0/AlibabaPuHuiTi-3-65-Medium.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  font-weight: 600;
+  font-style: normal;
+  src: url("@fontpkg/alibaba-puhuiti-3-0/AlibabaPuHuiTi-3-75-SemiBold.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Alibaba PuHuiTi 3";
+  font-weight: 700;
+  font-style: normal;
+  src: url("@fontpkg/alibaba-puhuiti-3-0/AlibabaPuHuiTi-3-85-Bold.ttf") format("truetype");
+}
 
 html,
 body {
@@ -7,4 +33,5 @@ body {
   padding: 0;
   height: 100%;
   width: 100%;
+  font-family: "Alibaba PuHuiTi 3", "Alibaba PuHuiTi", sans-serif;
 }

@@ -80,6 +80,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         });
         token.userId = user.id;
+      } else if (token.userId) {
+        // 校验 DB 中用户仍存在（如数据库重置后 token 失效）
+        const exists = await prisma.user.findUnique({
+          where: { id: token.userId as string },
+          select: { id: true },
+        });
+        if (!exists) delete token.userId;
       }
       return token;
     },

@@ -3,6 +3,7 @@ import { AntdRegistry } from "@ant-design/nextjs-registry";
 import SessionProviderWrapper from "./lib/components/SessionProviderWrapper";
 
 import "./globals.css";
+import "./chat.css";
 
 export const metadata: Metadata = {
   title: "LITHO",

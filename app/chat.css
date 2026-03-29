@@ -4,16 +4,37 @@
   display: flex;
   background: var(--ant-color-bg-container);
   font-family: AlibabaPuHuiTi, var(--ant-font-family), sans-serif;
+  --side-width: 280px;
+  --chat-max-width: 840px;
+  --bubble-max-width: 940px;
+}
+
+@media (max-width: 1024px) {
+  .app-layout {
+    --side-width: 220px;
+    --chat-max-width: 680px;
+    --bubble-max-width: 700px;
+  }
 }
 
 .app-side {
-  background: color-mix(in srgb, var(--ant-color-bg-layout) 50%, transparent);
-  width: 280px;
+  background: #fafafa;
+  width: var(--side-width);
   height: 100%;
   display: flex;
   flex-direction: column;
   padding: 0 12px;
   box-sizing: border-box;
+  border-right: 1px solid #f0f0f0;
+  transition: width 0.2s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.app-side-collapsed {
+  width: 48px;
+  padding: 0 8px;
+  align-items: center;
 }
 
 .app-logo {
@@ -23,6 +44,28 @@
   box-sizing: border-box;
   gap: 8px;
   padding: 20px 0 16px;
+  width: 100%;
+}
+
+.app-side-collapse-btn {
+  margin-left: auto;
+}
+
+.app-side-collapsed .app-logo {
+  justify-content: center;
+}
+
+.app-side-collapsed .app-side-collapse-btn {
+  margin-left: 0;
+}
+
+.app-side-collapsed-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  padding-top: 8px;
 }
 
 .app-logo-icon {
@@ -77,7 +120,8 @@
 
 .app-chat {
   height: 100%;
-  width: calc(100% - 280px);
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -118,6 +162,11 @@
   width: 100%;
 }
 
+.app-bubble-list {
+  max-width: var(--bubble-max-width);
+  width: 100%;
+}
+
 .app-placeholder {
   width: 100%;
   padding: var(--ant-padding-lg);
@@ -126,12 +175,12 @@
 
 .app-sender {
   width: 100%;
-  max-width: 840px;
+  max-width: var(--chat-max-width);
 }
 
 .app-sender-prompt {
   width: 100%;
-  max-width: 840px;
+  max-width: var(--chat-max-width);
   margin: 0 auto;
   color: var(--ant-color-text);
   justify-content: center;

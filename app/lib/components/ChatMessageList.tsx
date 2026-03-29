@@ -36,7 +36,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             loading: item.status === "loading",
             extraInfo: item.extraInfo as ChatMessage["extraInfo"],
           }))}
-          styles={{ root: { maxWidth: 940 } }}
+          className="app-bubble-list"
           role={getBubbleRole(className)}
         />
       ) : null}

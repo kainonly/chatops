@@ -37,6 +37,7 @@ export default function ChatPage() {
   const conversationId = params.id as string;
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [sideCollapsed, setSideCollapsed] = useState(false);
   const [className] = useMarkdownTheme();
   const [messageApi, contextHolder] = message.useMessage();
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
@@ -150,6 +151,8 @@ export default function ChatPage() {
             onDeleteConversation={handleDeleteConversation}
             messageApi={messageApi}
             avatarUrl={session?.user?.image ?? undefined}
+            collapsed={sideCollapsed}
+            onCollapse={() => setSideCollapsed((v) => !v)}
           />
           <div className="app-chat">
             <ChatMessageList
