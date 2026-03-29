@@ -19,7 +19,7 @@
 - API Token / Secret Key
 - 数据库连接字符串
 - OAuth App ID / Secret
-- 任何密码或邮箱（即使是 seed 数据）
+- 任何密码或邮箱
 
 新增配置项时，同步更新 `.env.example`，不得将实际值写入任何提交文件。
 

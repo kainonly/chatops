@@ -33,17 +33,11 @@ cp .env.example .env
 | `OPENCLAW_API_URL` | OpenClaw Gateway 地址，如 `http://127.0.0.1:18789/v1` |
 | `OPENCLAW_TOKEN` | OpenClaw Gateway 的 Bearer Token |
 | `AUTH_SECRET` | NextAuth 签名密钥，可用 `openssl rand -base64 32` 生成 |
-| `SEED_EMAIL` | 初始种子用户邮箱（仅 seed 时使用） |
-| `SEED_PASSWORD` | 初始种子用户密码（仅 seed 时使用） |
 
 ### 3. 初始化数据库
 
 ```bash
-# 运行数据库迁移
 npx prisma migrate deploy
-
-# （可选）写入初始用户
-npx prisma db seed
 ```
 
 ### 4. 启动开发服务器
@@ -92,9 +86,6 @@ npx prisma migrate dev
 # 数据库迁移（生产环境应用迁移）
 npx prisma migrate deploy
 
-# 写入初始数据
-npx prisma db seed
-
 # 查看数据库（Prisma Studio）
 npx prisma studio
 ```
@@ -120,7 +111,6 @@ chatops/
 │   └── page.tsx                  # 主页面
 ├── prisma/
 │   ├── schema.prisma             # 数据模型
-│   ├── seed.ts                   # 初始数据脚本
 │   └── migrations/               # 迁移文件
 ├── auth.ts                       # NextAuth 配置（飞书 OAuth）
 └── .env.example                  # 环境变量模板
