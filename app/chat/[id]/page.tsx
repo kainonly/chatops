@@ -12,7 +12,7 @@ import dayjs from "dayjs";
 
 import { historyMessageFactory } from "../../lib/chatHistory";
 import { providerFactory } from "../../lib/chatProvider";
-import ChatComposer from "../../lib/components/ChatComposer";
+import ChatComposer, { type PastedImage } from "../../lib/components/ChatComposer";
 import ChatMessageList from "../../lib/components/ChatMessageList";
 import ChatSidebar from "../../lib/components/ChatSidebar";
 import { ChatContext } from "../../lib/context";
@@ -44,6 +44,7 @@ export default function ChatPage() {
   const [attachedFiles, setAttachedFiles] = useState<
     GetProp<typeof Attachments, "items">
   >([]);
+  const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const listRef = useRef<BubbleListRef>(null);
 
@@ -106,8 +107,19 @@ export default function ChatPage() {
   }, [isRequesting, conversationId]);
 
   const onSubmit = (value: string) => {
-    if (!value) return;
-    onRequest({ messages: [{ role: "user", content: value }] });
+    if (!value && pastedImages.length === 0) return;
+    const content =
+      pastedImages.length > 0
+        ? [
+            ...pastedImages.map((img) => ({
+              type: "image_url" as const,
+              image_url: { url: img.dataUrl },
+            })),
+            ...(value ? [{ type: "text" as const, text: value }] : []),
+          ]
+        : value;
+    onRequest({ messages: [{ role: "user", content }] });
+    setPastedImages([]);
     listRef.current?.scrollTo({ top: "bottom" });
   };
 
@@ -165,6 +177,7 @@ export default function ChatPage() {
               loading={isRequesting}
               attachmentsOpen={attachmentsOpen}
               attachedFiles={attachedFiles}
+              pastedImages={pastedImages}
               onChange={setInputValue}
               onSubmit={() => {
                 onSubmit(inputValue);
@@ -173,6 +186,7 @@ export default function ChatPage() {
               onAbort={abort}
               onAttachmentsOpenChange={setAttachmentsOpen}
               onAttachedFilesChange={setAttachedFiles}
+              onPastedImagesChange={setPastedImages}
               onPromptClick={onSubmit}
             />
           </div>

@@ -162,6 +162,15 @@
   width: 100%;
 }
 
+/* 收紧 Markdown 排版 */
+.x-markdown-light,
+.x-markdown-dark {
+  --margin-li: 0 0 4px 0;
+  --margin-block: 0 0 8px 0;
+  --margin-ul-ol: 0 0 8px 20px;
+  --padding-ul-ol: 0 0 0 8px;
+}
+
 .app-bubble-list {
   max-width: var(--bubble-max-width);
   width: 100%;
@@ -176,6 +185,41 @@
 .app-sender {
   width: 100%;
   max-width: var(--chat-max-width);
+}
+
+.app-pasted-images {
+  padding: 4px 0;
+}
+
+.app-pasted-image-item {
+  position: relative;
+  display: inline-flex;
+  border-radius: 6px;
+  overflow: visible;
+}
+
+.app-pasted-image-item img {
+  height: 64px;
+  width: auto;
+  max-width: 120px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #f0f0f0;
+}
+
+.app-pasted-image-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: unset !important;
+  padding: 0 !important;
+  background: rgba(0,0,0,0.45) !important;
+  color: #fff !important;
+  border-radius: 50%;
+  font-size: 10px !important;
+  line-height: 18px !important;
 }
 
 .app-sender-prompt {

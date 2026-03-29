@@ -14,6 +14,7 @@
     "@ant-design/x": "^2.4.0",
     "@ant-design/x-markdown": "^2.4.0",
     "@ant-design/x-sdk": "^2.4.0",
+    "@antv/g2": "^5.4.8",
     "@fontpkg/alibaba-puhuiti-3-0": "^0.0.0",
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.5.0",

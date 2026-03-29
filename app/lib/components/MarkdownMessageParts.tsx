@@ -11,6 +11,9 @@ import { Actions, Think, ThoughtChain } from "@ant-design/x";
 import type { ComponentProps } from "@ant-design/x-markdown";
 import XMarkdown from "@ant-design/x-markdown";
 import { message, Pagination } from "antd";
+import dynamic from "next/dynamic";
+
+const G2Chart = dynamic(() => import("./G2Chart"), { ssr: false });
 
 import { THOUGHT_CHAIN_CONFIG } from "../config";
 import { ChatContext } from "../context";
@@ -124,22 +127,66 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
       />
     ),
     contentRender: (content: string, { status }) => {
-      // 双换行转 br，防止 Markdown 合并空行
-      const newContent = content.replace(/\n\n/g, "<br/><br/>");
+      // 列表项之间的空行会触发 Markdown loose list（每项套 <p>），导致间距过大
+      // 将列表项（- 或数字.）之间的空行压缩掉
+      const normalized = content.replace(
+        /((?:^[ \t]*(?:[-*+]|\d+\.)[ \t]+.+\n))\n(?=[ \t]*(?:[-*+]|\d+\.)[ \t]+)/gm,
+        "$1",
+      );
       return (
         <XMarkdown
           paragraphTag="div"
-          components={{ think: ThinkComponent }}
+          components={{
+            think: ThinkComponent,
+            code: ({ className: cls, children }) => {
+              const lang = /language-(\w+)/.exec(cls ?? "")?.[1];
+              if (lang === "g2") {
+                return <G2Chart config={String(children).trim()} />;
+              }
+              return <code className={cls}>{children}</code>;
+            },
+          }}
           className={className}
           streaming={{
             hasNextChunk: status === "updating",
             enableAnimation: true,
           }}
         >
-          {newContent}
+          {normalized}
         </XMarkdown>
       );
     },
   },
-  user: { placement: "end" },
+  user: {
+    placement: "end",
+    contentRender: (content) => {
+      if (typeof content === "string") return <span>{content}</span>;
+      const parts = content as Array<
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string } }
+      >;
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+          {parts.filter((p) => p.type === "image_url").length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {parts
+                .filter((p) => p.type === "image_url")
+                .map((p, i) => (
+                  <img
+                    key={i}
+                    src={(p as { type: "image_url"; image_url: { url: string } }).image_url.url}
+                    style={{ maxHeight: 200, maxWidth: 300, borderRadius: 6, objectFit: "cover" }}
+                  />
+                ))}
+            </div>
+          )}
+          {parts
+            .filter((p) => p.type === "text")
+            .map((p, i) => (
+              <span key={i}>{(p as { type: "text"; text: string }).text}</span>
+            ))}
+        </div>
+      );
+    },
+  },
 });
