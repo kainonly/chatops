@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { CloudUploadOutlined, CloseOutlined, PaperClipOutlined } from "@ant-design/icons";
 import { Attachments, Prompts, Sender } from "@ant-design/x";
 import { Button, Flex, type GetProp } from "antd";
@@ -13,13 +20,11 @@ export interface PastedImage {
 }
 
 interface ChatComposerProps {
-  value: string;
   loading: boolean;
   attachmentsOpen: boolean;
   attachedFiles: GetProp<typeof Attachments, "items">;
   pastedImages: PastedImage[];
-  onChange: (value: string) => void;
-  onSubmit: () => void;
+  onSubmit: (value: string) => void;
   onAbort: () => void;
   onAttachmentsOpenChange: (open: boolean) => void;
   onAttachedFilesChange: (files: GetProp<typeof Attachments, "items">) => void;
@@ -28,12 +33,10 @@ interface ChatComposerProps {
 }
 
 const ChatComposer: React.FC<ChatComposerProps> = ({
-  value,
   loading,
   attachmentsOpen,
   attachedFiles,
   pastedImages,
-  onChange,
   onSubmit,
   onAbort,
   onAttachmentsOpenChange,
@@ -42,6 +45,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
   onPromptClick,
 }) => {
   const senderRef = useRef<HTMLDivElement>(null);
+  const [value, setValue] = useState("");
 
   const speechReady = useSyncExternalStore(
     () => () => {},
@@ -85,28 +89,52 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
     onPastedImagesChange(pastedImages.filter((_, i) => i !== index));
   };
 
-  const header = (
-    <Sender.Header
-      title="上传文件"
-      open={attachmentsOpen}
-      onOpenChange={onAttachmentsOpenChange}
-      styles={{ content: { padding: 0 } }}
-    >
-      <Attachments
-        beforeUpload={() => false}
-        items={attachedFiles}
-        onChange={(info) => onAttachedFilesChange(info.fileList)}
-        placeholder={(type) =>
-          type === "drop"
-            ? { title: "将文件拖到此处" }
-            : {
-                icon: <CloudUploadOutlined />,
-                title: "上传文件",
-                description: "点击或将文件拖到此处上传",
-              }
-        }
+  const handleSubmit = useCallback(() => {
+    onSubmit(value);
+    setValue("");
+  }, [onSubmit, value]);
+
+  const header = useMemo(
+    () => (
+      <Sender.Header
+        title="上传文件"
+        open={attachmentsOpen}
+        onOpenChange={onAttachmentsOpenChange}
+        styles={{ content: { padding: 0 } }}
+      >
+        <Attachments
+          beforeUpload={() => false}
+          items={attachedFiles}
+          onChange={(info) => onAttachedFilesChange(info.fileList)}
+          placeholder={(type) =>
+            type === "drop"
+              ? { title: "将文件拖到此处" }
+              : {
+                  icon: <CloudUploadOutlined />,
+                  title: "上传文件",
+                  description: "点击或将文件拖到此处上传",
+                }
+          }
+        />
+      </Sender.Header>
+    ),
+    [
+      attachedFiles,
+      attachmentsOpen,
+      onAttachedFilesChange,
+      onAttachmentsOpenChange,
+    ],
+  );
+
+  const prefix = useMemo(
+    () => (
+      <Button
+        type="text"
+        icon={<PaperClipOutlined style={{ fontSize: 18 }} />}
+        onClick={() => onAttachmentsOpenChange(!attachmentsOpen)}
       />
-    </Sender.Header>
+    ),
+    [attachmentsOpen, onAttachmentsOpenChange],
   );
 
   return (
@@ -138,16 +166,10 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
       <Sender
         value={value}
         header={header}
-        onSubmit={onSubmit}
-        onChange={onChange}
+        onSubmit={handleSubmit}
+        onChange={setValue}
         onCancel={onAbort}
-        prefix={
-          <Button
-            type="text"
-            icon={<PaperClipOutlined style={{ fontSize: 18 }} />}
-            onClick={() => onAttachmentsOpenChange(!attachmentsOpen)}
-          />
-        }
+        prefix={prefix}
         loading={loading}
         className="app-sender"
         allowSpeech={speechReady}
@@ -157,4 +179,4 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
   );
 };
 
-export default ChatComposer;
+export default React.memo(ChatComposer);

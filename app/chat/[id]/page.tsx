@@ -51,7 +51,6 @@ export default function ChatPage() {
     GetProp<typeof Attachments, "items">
   >([]);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
-  const [inputValue, setInputValue] = useState("");
   const listRef = useRef<BubbleListRef>(null);
 
   // 加载会话列表
@@ -100,6 +99,8 @@ export default function ChatPage() {
     [onReload, setMessage],
   );
 
+  const locale = useMemo(() => ({ ...zhCN, ...zhCN_X }), []);
+
   // 请求完成后拉取最新标题（用于第一条消息生成标题后更新侧边栏）
   const prevRequestingRef = useRef(false);
   useEffect(() => {
@@ -117,7 +118,7 @@ export default function ChatPage() {
     prevRequestingRef.current = isRequesting;
   }, [isRequesting, conversationId]);
 
-  const onSubmit = (value: string) => {
+  const onSubmit = useCallback((value: string) => {
     if (!value && pastedImages.length === 0) return;
     const content =
       pastedImages.length > 0
@@ -132,7 +133,16 @@ export default function ChatPage() {
     onRequest({ messages: [{ role: "user", content }] });
     setPastedImages([]);
     listRef.current?.scrollTo({ top: "bottom" });
-  };
+  }, [onRequest, pastedImages]);
+
+  const handleActiveChange = useCallback(
+    (key: string) => router.push(`/chat/${key}`),
+    [router],
+  );
+
+  const handleCollapse = useCallback(() => {
+    setSideCollapsed((v) => !v);
+  }, []);
 
   const handleAddConversation = useCallback(async () => {
     const res = await fetch("/api/conversations", { method: "POST" });
@@ -162,20 +172,20 @@ export default function ChatPage() {
   );
 
   return (
-    <XProvider locale={{ ...zhCN, ...zhCN_X }}>
+    <XProvider locale={locale}>
       <ChatContext.Provider value={chatContextValue}>
         {contextHolder}
         <div className="app-layout">
           <ChatSidebar
             conversations={conversations}
             activeConversationKey={conversationId}
-            onActiveChange={(key) => router.push(`/chat/${key}`)}
+            onActiveChange={handleActiveChange}
             onAddConversation={handleAddConversation}
             onDeleteConversation={handleDeleteConversation}
             messageApi={messageApi}
             avatarUrl={session?.user?.image ?? undefined}
             collapsed={sideCollapsed}
-            onCollapse={() => setSideCollapsed((v) => !v)}
+            onCollapse={handleCollapse}
           />
           <div className="app-chat">
             <ChatMessageList
@@ -184,16 +194,11 @@ export default function ChatPage() {
               messages={messages}
             />
             <ChatComposer
-              value={inputValue}
               loading={isRequesting}
               attachmentsOpen={attachmentsOpen}
               attachedFiles={attachedFiles}
               pastedImages={pastedImages}
-              onChange={setInputValue}
-              onSubmit={() => {
-                onSubmit(inputValue);
-                setInputValue("");
-              }}
+              onSubmit={onSubmit}
               onAbort={abort}
               onAttachmentsOpenChange={setAttachmentsOpen}
               onAttachedFilesChange={setAttachedFiles}
