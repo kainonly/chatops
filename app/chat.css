@@ -111,24 +111,30 @@
 }
 
 /* 悬停保持背景色 */
+.app-conversations .ant-conversations-item {
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
 .app-conversations .ant-conversations-item:hover {
   background: rgba(0, 0, 0, 0.06) !important;
+  transform: translateX(2px);
 }
 
 /* 激活（当前会话）使用白色背景 */
 .app-conversations .ant-conversations-item-active,
 .app-conversations .ant-conversations-item-active:hover {
   background: #ffffff !important;
+  transform: translateX(3px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
-/* 非悬停时隐藏更多按钮，垂直居中 */
-.app-conversations .ant-conversations-item .ant-conversations-item-menu {
+/* 非悬停时隐藏更多按钮 */
+.app-conversations .ant-conversations-menu-icon {
   opacity: 0;
   pointer-events: none;
-  display: flex;
-  align-items: center;
+  transition: opacity 0.15s ease;
 }
-.app-conversations .ant-conversations-item:hover .ant-conversations-item-menu {
+.app-conversations .ant-conversations-item:hover .ant-conversations-menu-icon {
   opacity: 1;
   pointer-events: auto;
 }
@@ -149,6 +155,22 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+.app-chat-page {
+  display: contents;
+  animation: chat-page-enter 0.2s ease both;
+}
+
+@keyframes chat-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .app-chat .ant-bubble-content-updating {
