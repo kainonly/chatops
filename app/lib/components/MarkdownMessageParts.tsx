@@ -26,6 +26,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 
 const G2Chart = dynamic(() => import("./G2Chart"), { ssr: false });
+const Mermaid = dynamic(() => import("./Mermaid"), { ssr: false });
 
 const EXT_ICON: Record<string, React.ReactNode> = {
   pdf: <FilePdfOutlined style={{ color: "#ff4d4f" }} />,
@@ -218,6 +219,10 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
               if (codeLang === "g2") {
                 if (streamStatus === "loading") return null;
                 return <G2Chart config={String(children).trim()} />;
+              }
+              if (codeLang === "mermaid") {
+                if (streamStatus === "loading") return null;
+                return <Mermaid>{String(children)}</Mermaid>;
               }
               if (codeLang === "file") {
                 if (streamStatus === "loading") return null;
