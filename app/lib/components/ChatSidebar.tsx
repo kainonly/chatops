@@ -8,6 +8,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MessageOutlined,
+  MoreOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
 import { Conversations } from "@ant-design/x";
@@ -81,7 +82,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
             }}
             items={conversations.map(({ key, label, ...other }) => ({
               key,
-              label: key === activeConversationKey ? `[当前对话]${label}` : label,
+              label: (
+                <span style={{ display: "inline-flex", alignItems: "center" }}>
+                  <MessageOutlined
+                    style={{ marginRight: 6, opacity: 0.6, flexShrink: 0 }}
+                  />
+                  {label}
+                </span>
+              ),
               ...other,
             }))}
             className="app-conversations"
@@ -90,6 +98,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
             groupable
             styles={{ item: { padding: "0 8px" } }}
             menu={(conversation) => ({
+              trigger: <MoreOutlined />,
               items: [
                 {
                   label: "删除",
@@ -104,7 +113,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
           <div className="app-side-footer">
             <Avatar size={24} src={avatarUrl} />
-<Popconfirm
+            <Popconfirm
               title="确认退出登录？"
               onConfirm={() => signOut({ callbackUrl: "/login" })}
               okText="退出"

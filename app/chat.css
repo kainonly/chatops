@@ -110,6 +110,29 @@
   padding-inline-start: 0;
 }
 
+/* 悬停保持背景色 */
+.app-conversations .ant-conversations-item:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 激活（当前会话）使用白色背景 */
+.app-conversations .ant-conversations-item-active,
+.app-conversations .ant-conversations-item-active:hover {
+  background: #ffffff !important;
+}
+
+/* 非悬停时隐藏更多按钮，垂直居中 */
+.app-conversations .ant-conversations-item .ant-conversations-item-menu {
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+.app-conversations .ant-conversations-item:hover .ant-conversations-item-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .app-side-footer {
   border-top: 1px solid var(--ant-color-border-secondary);
   height: 40px;
