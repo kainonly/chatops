@@ -26,9 +26,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // 所有 API 路由（除 auth 回调外）
+    // 需要鉴权的 API 路由（排除 Auth.js 端点）
     "/api/((?!auth).*)",
-    // 所有页面路由（除 login 和静态资源外）
-    "/((?!login|_next/static|_next/image|favicon.ico).*)",
+    // 需要鉴权的页面路由（排除 API、登录页和静态资源）
+    "/((?!api|login|_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };

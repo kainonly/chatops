@@ -4,14 +4,15 @@ import React from "react";
 import {
   DeleteOutlined,
   EditOutlined,
+  LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MessageOutlined,
   PlusOutlined,
-  QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Conversations } from "@ant-design/x";
-import { Avatar, Button } from "antd";
+import { Avatar, Button, Popconfirm } from "antd";
+import { signOut } from "next-auth/react";
 import type { MessageInstance } from "antd/es/message/interface";
 
 type ConversationItem = {
@@ -103,7 +104,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
           <div className="app-side-footer">
             <Avatar size={24} src={avatarUrl} />
-            <Button type="text" icon={<QuestionCircleOutlined />} />
+<Popconfirm
+              title="确认退出登录？"
+              onConfirm={() => signOut({ callbackUrl: "/login" })}
+              okText="退出"
+              cancelText="取消"
+            >
+              <Button type="text" icon={<LogoutOutlined />} title="退出登录" />
+            </Popconfirm>
           </div>
         </>
       )}

@@ -1,5 +1,6 @@
 node_modules
 docs
+mcp.json
 .next
 .env
 .env.local
