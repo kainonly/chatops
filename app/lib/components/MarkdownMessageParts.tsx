@@ -23,6 +23,7 @@ import type { ComponentProps } from "@ant-design/x-markdown";
 import XMarkdown from "@ant-design/x-markdown";
 import { message, Pagination } from "antd";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 
 const G2Chart = dynamic(() => import("./G2Chart"), { ssr: false });
 
@@ -75,16 +76,6 @@ function FileCard({ href, children }: { href: string; children?: React.ReactNode
       <DownloadOutlined style={{ color: "#8c8c8c", flexShrink: 0 }} />
     </a>
   );
-}
-
-const COS_HOST = process.env.NEXT_PUBLIC_COS_BUCKET
-  ? `${process.env.NEXT_PUBLIC_COS_BUCKET}.cos.`
-  : null;
-
-function isFileLink(href: string): boolean {
-  if (COS_HOST && href.includes(COS_HOST)) return true;
-  if (href.startsWith("cos://")) return true;
-  return false;
 }
 
 import { THOUGHT_CHAIN_CONFIG } from "../config";
@@ -211,11 +202,13 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
           components={{
             think: ThinkComponent,
             a: ({ href, children }) => {
-              if (href && isFileLink(href)) {
-                return <FileCard href={href}>{children}</FileCard>;
-              }
+              const resolvedHref = typeof href === "string" ? href : undefined;
               return (
-                <a href={href} target="_blank" rel="noopener noreferrer">
+                <a
+                  href={resolvedHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   {children}
                 </a>
               );
@@ -264,9 +257,13 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
               {parts
                 .filter((p) => p.type === "image_url")
                 .map((p, i) => (
-                  <img
+                  <Image
                     key={i}
                     src={(p as { type: "image_url"; image_url: { url: string } }).image_url.url}
+                    alt={`上传图片 ${i + 1}`}
+                    width={300}
+                    height={200}
+                    unoptimized
                     style={{ maxHeight: 200, maxWidth: 300, borderRadius: 6, objectFit: "cover" }}
                   />
                 ))}
