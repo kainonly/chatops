@@ -65,7 +65,17 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${OPENCLAW_TOKEN}`,
     },
     body: JSON.stringify({
-      messages: reqMessages,
+      messages: [
+        {
+          role: "system",
+          content: `当你需要向用户分享、提供或返回一个文件时，必须使用以下格式，不得使用普通 Markdown 链接：
+\`\`\`file
+{"url":"<文件URL>","name":"<文件名>"}
+\`\`\`
+仅在明确向用户提供可下载文件时使用此格式。`,
+        },
+        ...reqMessages,
+      ],
       stream: true,
       ...(model && { model }),
     }),

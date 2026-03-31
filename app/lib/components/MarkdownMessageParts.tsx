@@ -1,7 +1,18 @@
 "use client";
 
 import React from "react";
-import { GlobalOutlined, SyncOutlined } from "@ant-design/icons";
+import {
+  FilePdfOutlined,
+  FileExcelOutlined,
+  FileWordOutlined,
+  FileZipOutlined,
+  FileImageOutlined,
+  FileTextOutlined,
+  FileOutlined,
+  GlobalOutlined,
+  SyncOutlined,
+  DownloadOutlined,
+} from "@ant-design/icons";
 import type {
   ActionsFeedbackProps,
   BubbleListProps,
@@ -14,6 +25,67 @@ import { message, Pagination } from "antd";
 import dynamic from "next/dynamic";
 
 const G2Chart = dynamic(() => import("./G2Chart"), { ssr: false });
+
+const EXT_ICON: Record<string, React.ReactNode> = {
+  pdf: <FilePdfOutlined style={{ color: "#ff4d4f" }} />,
+  xls: <FileExcelOutlined style={{ color: "#52c41a" }} />,
+  xlsx: <FileExcelOutlined style={{ color: "#52c41a" }} />,
+  csv: <FileExcelOutlined style={{ color: "#52c41a" }} />,
+  doc: <FileWordOutlined style={{ color: "#1677ff" }} />,
+  docx: <FileWordOutlined style={{ color: "#1677ff" }} />,
+  zip: <FileZipOutlined style={{ color: "#faad14" }} />,
+  rar: <FileZipOutlined style={{ color: "#faad14" }} />,
+  png: <FileImageOutlined style={{ color: "#722ed1" }} />,
+  jpg: <FileImageOutlined style={{ color: "#722ed1" }} />,
+  jpeg: <FileImageOutlined style={{ color: "#722ed1" }} />,
+  gif: <FileImageOutlined style={{ color: "#722ed1" }} />,
+  txt: <FileTextOutlined style={{ color: "#8c8c8c" }} />,
+  md: <FileTextOutlined style={{ color: "#8c8c8c" }} />,
+};
+
+function FileCard({ href, children }: { href: string; children?: React.ReactNode }) {
+  const filename = decodeURIComponent(href.split("/").pop() ?? href);
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const icon = EXT_ICON[ext] ?? <FileOutlined style={{ color: "#8c8c8c" }} />;
+  const label = typeof children === "string" && children !== href ? children : filename;
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        borderRadius: 6,
+        border: "1px solid #f0f0f0",
+        background: "#fafafa",
+        color: "rgba(0,0,0,0.88)",
+        textDecoration: "none",
+        fontSize: 13,
+        maxWidth: 320,
+      }}
+    >
+      <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
+      <DownloadOutlined style={{ color: "#8c8c8c", flexShrink: 0 }} />
+    </a>
+  );
+}
+
+const COS_HOST = process.env.NEXT_PUBLIC_COS_BUCKET
+  ? `${process.env.NEXT_PUBLIC_COS_BUCKET}.cos.`
+  : null;
+
+function isFileLink(href: string): boolean {
+  if (COS_HOST && href.includes(COS_HOST)) return true;
+  if (href.startsWith("cos://")) return true;
+  return false;
+}
 
 import { THOUGHT_CHAIN_CONFIG } from "../config";
 import { ChatContext } from "../context";
@@ -138,11 +210,30 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
           paragraphTag="div"
           components={{
             think: ThinkComponent,
+            a: ({ href, children }) => {
+              if (href && isFileLink(href)) {
+                return <FileCard href={href}>{children}</FileCard>;
+              }
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              );
+            },
             code: ({ className: cls, children, streamStatus }) => {
               const lang = /language-(\w+)/.exec(cls ?? "")?.[1];
               if (lang === "g2") {
                 if (streamStatus === "loading") return null;
                 return <G2Chart config={String(children).trim()} />;
+              }
+              if (lang === "file") {
+                if (streamStatus === "loading") return null;
+                try {
+                  const { url, name } = JSON.parse(String(children).trim());
+                  return <FileCard href={url}>{name}</FileCard>;
+                } catch {
+                  return <code className={cls}>{children}</code>;
+                }
               }
               return <code className={cls}>{children}</code>;
             },
