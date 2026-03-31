@@ -18,7 +18,7 @@ import type {
   BubbleListProps,
   ThoughtChainItemProps,
 } from "@ant-design/x";
-import { Actions, Think, ThoughtChain } from "@ant-design/x";
+import { Actions, CodeHighlighter, Think, ThoughtChain } from "@ant-design/x";
 import type { ComponentProps } from "@ant-design/x-markdown";
 import XMarkdown from "@ant-design/x-markdown";
 import { message, Pagination } from "antd";
@@ -214,12 +214,12 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
               );
             },
             code: ({ className: cls, children, streamStatus }) => {
-              const lang = /language-(\w+)/.exec(cls ?? "")?.[1];
-              if (lang === "g2") {
+              const codeLang = /language-(\w+)/.exec(cls ?? "")?.[1];
+              if (codeLang === "g2") {
                 if (streamStatus === "loading") return null;
                 return <G2Chart config={String(children).trim()} />;
               }
-              if (lang === "file") {
+              if (codeLang === "file") {
                 if (streamStatus === "loading") return null;
                 try {
                   const { url, name } = JSON.parse(String(children).trim());
@@ -227,6 +227,13 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
                 } catch {
                   return <code className={cls}>{children}</code>;
                 }
+              }
+              if (codeLang) {
+                return (
+                  <CodeHighlighter lang={codeLang}>
+                    {String(children)}
+                  </CodeHighlighter>
+                );
               }
               return <code className={cls}>{children}</code>;
             },
