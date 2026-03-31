@@ -163,18 +163,89 @@
 }
 
 /* 收紧 Markdown 排版 */
-.x-markdown-light,
-.x-markdown-dark {
-  --margin-li: 2px 0;
+.x-markdown.x-markdown-light,
+.x-markdown.x-markdown-dark {
+  --margin-li: 0;
   --margin-block: 0 0 8px 0;
   --margin-ul-ol: 4px 0 4px 20px;
   --padding-ul-ol: 0 0 0 8px;
 }
 
-/* 压缩 loose list 中 <li> 内嵌 <p> 的额外间距 */
-.x-markdown-light li > p,
-.x-markdown-dark li > p {
+/* 直接覆盖规则，优先级高于库的 .x-markdown element（0,2,1 vs 0,1,1）*/
+
+/* p */
+.x-markdown.x-markdown-light p,
+.x-markdown.x-markdown-dark p {
+  margin: 0 0 8px 0;
+}
+.x-markdown.x-markdown-light p:first-child,
+.x-markdown.x-markdown-dark p:first-child {
+  margin-top: 0;
+}
+.x-markdown.x-markdown-light p:last-child,
+.x-markdown.x-markdown-dark p:last-child {
+  margin-bottom: 0;
+}
+
+/* ul / ol */
+.x-markdown.x-markdown-light ul,
+.x-markdown.x-markdown-light ol,
+.x-markdown.x-markdown-dark ul,
+.x-markdown.x-markdown-dark ol {
+  margin: 4px 0 4px 20px;
+  padding: 0 0 0 8px;
+}
+.x-markdown.x-markdown-light :is(ul, ol):first-child,
+.x-markdown.x-markdown-dark :is(ul, ol):first-child {
+  margin-top: 0;
+}
+.x-markdown.x-markdown-light :is(ul, ol):last-child,
+.x-markdown.x-markdown-dark :is(ul, ol):last-child {
+  margin-bottom: 0;
+}
+
+/* XMarkdown 使用 paragraphTag="div"，loose list 会渲染成 <li><div>...</div></li> */
+.x-markdown.x-markdown-light li,
+.x-markdown.x-markdown-dark li {
   margin: 0;
+}
+
+.x-markdown.x-markdown-light li > :is(p, div),
+.x-markdown.x-markdown-dark li > :is(p, div) {
+  margin: 0;
+}
+
+.x-markdown.x-markdown-light li + li,
+.x-markdown.x-markdown-dark li + li {
+  margin-top: 0;
+}
+
+/* h1–h6（库无对应 CSS 变量，依赖浏览器默认） */
+.x-markdown.x-markdown-light :is(h1, h2, h3, h4, h5, h6),
+.x-markdown.x-markdown-dark :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 8px 0;
+}
+.x-markdown.x-markdown-light :is(h1, h2, h3, h4, h5, h6):first-child,
+.x-markdown.x-markdown-dark :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.x-markdown.x-markdown-light :is(h1, h2, h3, h4, h5, h6):last-child,
+.x-markdown.x-markdown-dark :is(h1, h2, h3, h4, h5, h6):last-child {
+  margin-bottom: 0;
+}
+
+/* pre */
+.x-markdown.x-markdown-light pre,
+.x-markdown.x-markdown-dark pre {
+  margin: 8px 0;
+}
+.x-markdown.x-markdown-light pre:first-child,
+.x-markdown.x-markdown-dark pre:first-child {
+  margin-top: 0;
+}
+.x-markdown.x-markdown-light pre:last-child,
+.x-markdown.x-markdown-dark pre:last-child {
+  margin-bottom: 0;
 }
 
 .app-bubble-list {
