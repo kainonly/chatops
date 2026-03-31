@@ -13,7 +13,7 @@ interface FeishuProfile {
 function FeishuProvider(
   options: OAuthUserConfig<FeishuProfile>
 ): OAuthConfig<FeishuProfile> {
-  return {
+  const config: OAuthConfig<FeishuProfile> = {
     id: "feishu",
     name: "飞书",
     type: "oauth",
@@ -27,7 +27,13 @@ function FeishuProvider(
     token: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
     userinfo: {
       url: "https://open.feishu.cn/open-apis/authen/v1/user_info",
-      async request({ tokens, provider }) {
+      async request({
+        tokens,
+        provider,
+      }: {
+        tokens: { access_token?: string | null };
+        provider: { userinfo?: { url?: string } };
+      }) {
         const res = await fetch(provider.userinfo!.url as string, {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
         });
@@ -43,9 +49,11 @@ function FeishuProvider(
         image: profile.avatar_url ?? null,
       };
     },
-    checks: ["state"],
     ...options,
+    checks: ["state"],
   };
+
+  return config;
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -62,7 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, profile }) {
       if (profile) {
-        const feishuProfile = profile as FeishuProfile;
+        const feishuProfile = profile as unknown as FeishuProfile;
         if (!feishuProfile.union_id) return token;
         // 首次登录自动创建或更新用户
         const user = await prisma.user.upsert({
