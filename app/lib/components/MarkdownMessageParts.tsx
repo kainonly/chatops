@@ -138,9 +138,10 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
           paragraphTag="div"
           components={{
             think: ThinkComponent,
-            code: ({ className: cls, children }) => {
+            code: ({ className: cls, children, streamStatus }) => {
               const lang = /language-(\w+)/.exec(cls ?? "")?.[1];
               if (lang === "g2") {
+                if (streamStatus === "loading") return null;
                 return <G2Chart config={String(children).trim()} />;
               }
               return <code className={cls}>{children}</code>;

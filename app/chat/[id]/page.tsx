@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Attachments } from "@ant-design/x";
 import { XProvider } from "@ant-design/x";
@@ -89,6 +95,11 @@ export default function ChatPage() {
       },
     });
 
+  const chatContextValue = useMemo(
+    () => ({ onReload, setMessage }),
+    [onReload, setMessage],
+  );
+
   // 请求完成后拉取最新标题（用于第一条消息生成标题后更新侧边栏）
   const prevRequestingRef = useRef(false);
   useEffect(() => {
@@ -152,7 +163,7 @@ export default function ChatPage() {
 
   return (
     <XProvider locale={{ ...zhCN, ...zhCN_X }}>
-      <ChatContext.Provider value={{ onReload, setMessage }}>
+      <ChatContext.Provider value={chatContextValue}>
         {contextHolder}
         <div className="app-layout">
           <ChatSidebar

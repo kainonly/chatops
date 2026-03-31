@@ -9,9 +9,11 @@ interface G2ChartProps {
 
 const G2Chart: React.FC<G2ChartProps> = ({ config }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const renderedConfigRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    if (renderedConfigRef.current === config) return;
 
     let spec: Record<string, unknown>;
     try {
@@ -20,11 +22,14 @@ const G2Chart: React.FC<G2ChartProps> = ({ config }) => {
       return;
     }
 
+    renderedConfigRef.current = config;
+
     const chart = new Chart({ container: containerRef.current, autoFit: true });
     chart.options(spec);
     chart.render();
 
     return () => {
+      renderedConfigRef.current = null;
       chart.destroy();
     };
   }, [config]);
@@ -37,4 +42,4 @@ const G2Chart: React.FC<G2ChartProps> = ({ config }) => {
   );
 };
 
-export default G2Chart;
+export default React.memo(G2Chart);

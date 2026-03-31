@@ -33,13 +33,6 @@ async function generateTitle(userMessage: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return new Response(JSON.stringify({ error: "未登录" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   const body = await req.json();
   const { conversationId, messages: reqMessages = [], model } = body;
 
@@ -48,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (conversationId) {
     const [conversation, messageCount] = await Promise.all([
       prisma.conversation.findFirst({
-        where: { id: conversationId, userId: session.user.id },
+        where: { id: conversationId, userId: session!.user!.id! },
       }),
       prisma.message.count({ where: { conversationId } }),
     ]);

@@ -7,12 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
   const { id } = await params;
   const conversation = await prisma.conversation.findFirst({
-    where: { id, userId: session.user.id },
+    where: { id, userId: session!.user!.id! },
     select: { id: true, title: true },
   });
   if (!conversation) {
@@ -26,14 +23,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
-
   const { id } = await params;
 
   await prisma.conversation.deleteMany({
-    where: { id, userId: session.user.id },
+    where: { id, userId: session!.user!.id! },
   });
 
   return NextResponse.json({ ok: true });
@@ -44,15 +37,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
-
   const { id } = await params;
   const { title } = await req.json();
 
   const conversation = await prisma.conversation.updateMany({
-    where: { id, userId: session.user.id },
+    where: { id, userId: session!.user!.id! },
     data: { title },
   });
 

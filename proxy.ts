@@ -1,19 +1,34 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// 未登录用户重定向到登录页
-export function proxy(request: NextRequest) {
-  const token =
+function isAuthenticated(request: NextRequest): boolean {
+  return !!(
     request.cookies.get("authjs.session-token") ??
-    request.cookies.get("__Secure-authjs.session-token");
+    request.cookies.get("__Secure-authjs.session-token")
+  );
+}
 
-  if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url));
+export function proxy(request: NextRequest) {
+  if (isAuthenticated(request)) {
+    return NextResponse.next();
   }
 
-  return NextResponse.next();
+  const { pathname } = request.nextUrl;
+
+  // API 路由：返回 401
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
+  // 页面路由：重定向到登录页
+  return NextResponse.redirect(new URL("/login", request.url));
 }
 
 export const config = {
-  matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    // 所有 API 路由（除 auth 回调外）
+    "/api/((?!auth).*)",
+    // 所有页面路由（除 login 和静态资源外）
+    "/((?!login|_next/static|_next/image|favicon.ico).*)",
+  ],
 };

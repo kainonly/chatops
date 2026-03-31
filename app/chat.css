@@ -165,10 +165,16 @@
 /* 收紧 Markdown 排版 */
 .x-markdown-light,
 .x-markdown-dark {
-  --margin-li: 0 0 4px 0;
+  --margin-li: 2px 0;
   --margin-block: 0 0 8px 0;
-  --margin-ul-ol: 0 0 8px 20px;
+  --margin-ul-ol: 4px 0 4px 20px;
   --padding-ul-ol: 0 0 0 8px;
+}
+
+/* 压缩 loose list 中 <li> 内嵌 <p> 的额外间距 */
+.x-markdown-light li > p,
+.x-markdown-dark li > p {
+  margin: 0;
 }
 
 .app-bubble-list {
@@ -215,7 +221,7 @@
   height: 18px !important;
   min-width: unset !important;
   padding: 0 !important;
-  background: rgba(0,0,0,0.45) !important;
+  background: rgba(0, 0, 0, 0.45) !important;
   color: #fff !important;
   border-radius: 50%;
   font-size: 10px !important;

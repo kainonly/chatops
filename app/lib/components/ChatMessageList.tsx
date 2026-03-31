@@ -24,24 +24,32 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   listRef,
   messages,
 }) => {
+  const items = React.useMemo(
+    () =>
+      messages.map((item) => ({
+        ...item.message,
+        key: item.id,
+        status: item.status,
+        loading: item.status === "loading",
+        extraInfo: item.extraInfo as ChatMessage["extraInfo"],
+      })),
+    [messages],
+  );
+
+  const role = React.useMemo(() => getBubbleRole(className), [className]);
+
   return (
     <div className="app-chat-list">
-      {messages.length ? (
+      {items.length ? (
         <Bubble.List
           ref={listRef}
-          items={messages.map((item) => ({
-            ...item.message,
-            key: item.id,
-            status: item.status,
-            loading: item.status === "loading",
-            extraInfo: item.extraInfo as ChatMessage["extraInfo"],
-          }))}
+          items={items}
           className="app-bubble-list"
-          role={getBubbleRole(className)}
+          role={role}
         />
       ) : null}
     </div>
   );
 };
 
-export default ChatMessageList;
+export default React.memo(ChatMessageList);
