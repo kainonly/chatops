@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: "chatops",
-      script: "npm",
-      args: "start",
+      script: "node_modules/.bin/next",
+      args: "start -p 47293",
       exec_mode: "cluster",
       instances: "max",
       env: {
