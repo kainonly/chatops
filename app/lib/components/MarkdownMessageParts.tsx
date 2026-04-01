@@ -21,7 +21,7 @@ import type {
 import { Actions, CodeHighlighter, Think, ThoughtChain } from "@ant-design/x";
 import type { ComponentProps } from "@ant-design/x-markdown";
 import XMarkdown from "@ant-design/x-markdown";
-import { message, Pagination } from "antd";
+import { Button, message, Pagination, Space } from "antd";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 
@@ -82,6 +82,80 @@ function FileCard({ href, children }: { href: string; children?: React.ReactNode
 import { THOUGHT_CHAIN_CONFIG } from "../config";
 import { ChatContext } from "../context";
 import type { ChatMessage } from "../types";
+
+const APPROVAL_COMMAND_RE = /\/approve\s+([a-z0-9]+)\s+(allow-once|allow-always)/gi;
+
+function extractApprovalContent(content: string) {
+  const matches = Array.from(content.matchAll(APPROVAL_COMMAND_RE));
+  if (matches.length < 2) return null;
+
+  const requestId = matches[0]?.[1];
+  if (!requestId) return null;
+
+  const actions = new Set(
+    matches
+      .filter((match) => match[1] === requestId)
+      .map((match) => match[2]),
+  );
+
+  if (!actions.has("allow-once") || !actions.has("allow-always")) {
+    return null;
+  }
+
+  const sanitized = content
+    .replace(
+      new RegExp(`^.*?/approve\\s+${requestId}\\s+allow-once.*$\\n?`, "gm"),
+      "",
+    )
+    .replace(
+      new RegExp(`^.*?/approve\\s+${requestId}\\s+allow-always.*$\\n?`, "gm"),
+      "",
+    )
+    .replace(/^\s*请回复其一：\s*$/gm, "")
+    .replace(/^\s*或：\s*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return {
+    requestId,
+    content: sanitized,
+  };
+}
+
+const ApprovalActions = React.memo(function ApprovalActions({
+  requestId,
+}: {
+  requestId: string;
+}) {
+  const context = React.useContext(ChatContext);
+
+  const sendApproval = React.useCallback(
+    (mode: "allow-once" | "allow-always") => {
+      context?.onQuickSubmit?.(`/approve ${requestId} ${mode}`);
+    },
+    [context, requestId],
+  );
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Space wrap size={8}>
+        <Button
+          type="primary"
+          disabled={!context?.onQuickSubmit || context.isRequesting}
+          onClick={() => sendApproval("allow-once")}
+        >
+          执行一次
+        </Button>
+        <Button
+          disabled={!context?.onQuickSubmit || context.isRequesting}
+          onClick={() => sendApproval("allow-always")}
+        >
+          永久执行
+        </Button>
+      </Space>
+    </div>
+  );
+});
 
 // 渲染 AI 回复中的 <think> 标签
 const ThinkComponent = React.memo(function ThinkComponent(
@@ -193,64 +267,70 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
     contentRender: (content: string, { status }) => {
       // 列表项之间的空行会触发 Markdown loose list（每项套 <p>），导致间距过大
       // 将列表项（- 或数字.）之间的空行压缩掉
-      const normalized = content.replace(
+      const approvalContent = extractApprovalContent(content);
+      const normalized = (approvalContent?.content ?? content).replace(
         /((?:^[ \t]*(?:[-*+]|\d+\.)[ \t]+.+\n))\n(?=[ \t]*(?:[-*+]|\d+\.)[ \t]+)/gm,
         "$1",
       );
       return (
-        <XMarkdown
-          paragraphTag="div"
-          components={{
-            think: ThinkComponent,
-            a: ({ href, children }) => {
-              const resolvedHref = typeof href === "string" ? href : undefined;
-              return (
-                <a
-                  href={resolvedHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {children}
-                </a>
-              );
-            },
-            code: ({ className: cls, children, streamStatus }) => {
-              const codeLang = /language-(\w+)/.exec(cls ?? "")?.[1];
-              if (codeLang === "g2") {
-                if (streamStatus === "loading") return null;
-                return <G2Chart config={String(children).trim()} />;
-              }
-              if (codeLang === "mermaid") {
-                if (streamStatus === "loading") return null;
-                return <Mermaid>{String(children)}</Mermaid>;
-              }
-              if (codeLang === "file") {
-                if (streamStatus === "loading") return null;
-                try {
-                  const { url, name } = JSON.parse(String(children).trim());
-                  return <FileCard href={url}>{name}</FileCard>;
-                } catch {
-                  return <code className={cls}>{children}</code>;
-                }
-              }
-              if (codeLang) {
+        <>
+          {approvalContent ? (
+            <ApprovalActions requestId={approvalContent.requestId} />
+          ) : null}
+          <XMarkdown
+            paragraphTag="div"
+            components={{
+              think: ThinkComponent,
+              a: ({ href, children }) => {
+                const resolvedHref = typeof href === "string" ? href : undefined;
                 return (
-                  <CodeHighlighter lang={codeLang}>
-                    {String(children)}
-                  </CodeHighlighter>
+                  <a
+                    href={resolvedHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {children}
+                  </a>
                 );
-              }
-              return <code className={cls}>{children}</code>;
-            },
-          }}
-          className={className}
-          streaming={{
-            hasNextChunk: status === "updating",
-            enableAnimation: true,
-          }}
-        >
-          {normalized}
-        </XMarkdown>
+              },
+              code: ({ className: cls, children, streamStatus }) => {
+                const codeLang = /language-(\w+)/.exec(cls ?? "")?.[1];
+                if (codeLang === "g2") {
+                  if (streamStatus === "loading") return null;
+                  return <G2Chart config={String(children).trim()} />;
+                }
+                if (codeLang === "mermaid") {
+                  if (streamStatus === "loading") return null;
+                  return <Mermaid>{String(children)}</Mermaid>;
+                }
+                if (codeLang === "file") {
+                  if (streamStatus === "loading") return null;
+                  try {
+                    const { url, name } = JSON.parse(String(children).trim());
+                    return <FileCard href={url}>{name}</FileCard>;
+                  } catch {
+                    return <code className={cls}>{children}</code>;
+                  }
+                }
+                if (codeLang) {
+                  return (
+                    <CodeHighlighter lang={codeLang}>
+                      {String(children)}
+                    </CodeHighlighter>
+                  );
+                }
+                return <code className={cls}>{children}</code>;
+              },
+            }}
+            className={className}
+            streaming={{
+              hasNextChunk: status === "updating",
+              enableAnimation: true,
+            }}
+          >
+            {normalized}
+          </XMarkdown>
+        </>
       );
     },
   },

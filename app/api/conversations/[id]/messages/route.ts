@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../auth";
 import { prisma } from "../../../../lib/db";
+import { syncConversationMessagesFromOpenClaw } from "../../../../lib/openclaw";
 
 export async function GET(
   _req: NextRequest,
@@ -16,6 +17,8 @@ export async function GET(
   if (!conversation) {
     return NextResponse.json({ error: "会话不存在" }, { status: 404 });
   }
+
+  await syncConversationMessagesFromOpenClaw(id);
 
   const messages = await prisma.message.findMany({
     where: { conversationId: id },

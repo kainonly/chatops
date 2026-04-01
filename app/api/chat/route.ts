@@ -1,9 +1,90 @@
 import { NextRequest } from "next/server";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { auth } from "../../../auth";
 import { prisma } from "../../lib/db";
+import {
+  getOpenClawSessionKey,
+  loadGatewayConfig,
+} from "../../lib/openclaw";
 
 const OPENCLAW_API_URL = process.env.OPENCLAW_API_URL!;
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN!;
+const execFileAsync = promisify(execFile);
+const APPROVE_COMMAND_RE =
+  /^\/approve(?:@[^\s]+)?\s+([A-Za-z0-9][A-Za-z0-9._:-]*)\s+(allow-once|allow-always|always|deny)\b/i;
+
+function buildStreamingTextResponse(content: string) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            choices: [{ delta: { content } }],
+          })}\n\n`,
+        ),
+      );
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+async function resolveApprovalViaGateway(rawCommand: string) {
+  const match = rawCommand.trim().match(APPROVE_COMMAND_RE);
+  if (!match) return null;
+
+  const [, approvalId, rawDecision] = match;
+  const decision = rawDecision.toLowerCase() === "always" ? "allow-always" : rawDecision.toLowerCase();
+  const { port, token } = await loadGatewayConfig();
+  const params = JSON.stringify({ id: approvalId, decision });
+  const url = `ws://127.0.0.1:${port}`;
+
+  const callMethod = async (method: "exec.approval.resolve" | "plugin.approval.resolve") => {
+    return await execFileAsync("openclaw", [
+      "gateway",
+      "call",
+      method,
+      "--json",
+      "--url",
+      url,
+      "--token",
+      token,
+      "--params",
+      params,
+    ]);
+  };
+
+  try {
+    await callMethod(approvalId.startsWith("plugin:") ? "plugin.approval.resolve" : "exec.approval.resolve");
+  } catch (error) {
+    const stderr =
+      error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string"
+        ? error.stderr
+        : String(error);
+    const notFound = /unknown or expired approval id|approval_not_found|APPROVAL_NOT_FOUND/i.test(stderr);
+
+    if (!approvalId.startsWith("plugin:") && notFound) {
+      await callMethod("plugin.approval.resolve");
+    } else {
+      throw new Error(stderr.trim() || "审批提交失败");
+    }
+  }
+
+  return {
+    approvalId,
+    decision,
+  };
+}
 
 async function generateTitle(userMessage: string): Promise<string> {
   try {
@@ -57,27 +138,54 @@ export async function POST(req: NextRequest) {
   const lastUserMessage = [...reqMessages]
     .reverse()
     .find((m: { role: string }) => m.role === "user");
+  const approvalResolution =
+    typeof lastUserMessage?.content === "string"
+      ? await resolveApprovalViaGateway(lastUserMessage.content)
+      : null;
+
+  if (approvalResolution) {
+    const assistantContent = `✅ 审批已提交：${approvalResolution.approvalId} ${approvalResolution.decision}`;
+
+    if (conversationId && lastUserMessage) {
+      await prisma.$transaction([
+        prisma.message.create({
+          data: {
+            conversationId,
+            role: "user",
+            content: lastUserMessage.content,
+          },
+        }),
+        prisma.message.create({
+          data: { conversationId, role: "assistant", content: assistantContent },
+        }),
+        prisma.conversation.update({
+          where: { id: conversationId },
+          data: { updatedAt: new Date() },
+        }),
+      ]);
+    }
+
+    return buildStreamingTextResponse(assistantContent);
+  }
 
   const response = await fetch(OPENCLAW_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${OPENCLAW_TOKEN}`,
+      ...(conversationId
+        ? {
+            "x-openclaw-session-key": getOpenClawSessionKey(conversationId),
+            "x-openclaw-message-channel": "webchat",
+          }
+        : {}),
+      ...(model ? { "x-openclaw-model": model } : {}),
     },
     body: JSON.stringify({
-      messages: [
-        {
-          role: "system",
-          content: `当你需要向用户分享、提供或返回一个文件时，必须使用以下格式，不得使用普通 Markdown 链接：
-\`\`\`file
-{"url":"<文件URL>","name":"<文件名>"}
-\`\`\`
-仅在明确向用户提供可下载文件时使用此格式。`,
-        },
-        ...reqMessages,
-      ],
+      ...(model ? { model } : {}),
+      messages: reqMessages,
       stream: true,
-      ...(model && { model }),
+      user: conversationId,
     }),
   });
 

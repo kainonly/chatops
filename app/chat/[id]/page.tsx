@@ -24,6 +24,36 @@ import useMarkdownTheme from "../../lib/useMarkdownTheme";
 import "@ant-design/x-markdown/themes/dark.css";
 import "@ant-design/x-markdown/themes/light.css";
 
+const APPROVE_COMMAND_RE =
+  /^\/approve(?:@[^\s]+)?\s+[A-Za-z0-9][A-Za-z0-9._:-]*\s+(allow-once|allow-always|always|deny)\b/i;
+const APPROVAL_FOLLOWUP_POLL_MS = 2500;
+const APPROVAL_FOLLOWUP_POLL_WINDOW_MS = 90_000;
+
+function toComparableText(content: ChatMessage["content"]): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        part?.type === "text" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
+    .join("")
+    .trim();
+}
+
+function toComparableTurns(
+  list: ReturnType<typeof useXChat<ChatMessage>>["messages"],
+) {
+  return list
+    .map((item) => ({
+      role: item.message.role,
+      content: toComparableText(item.message.content),
+    }))
+    .filter((item) => item.content.length > 0);
+}
+
 export default function ChatPage() {
   const params = useParams();
   const conversationId = params.id as string;
@@ -33,9 +63,12 @@ export default function ChatPage() {
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<GetProp<typeof Attachments, "items">>([]);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
+  const [approvalPollingToken, setApprovalPollingToken] = useState(0);
   const listRef = useRef<BubbleListRef>(null);
+  const messagesRef = useRef<ReturnType<typeof useXChat<ChatMessage>>["messages"]>([]);
+  const approvalPollUntilRef = useRef<number | null>(null);
 
-  const { onRequest, messages, isRequesting, abort, onReload, setMessage } =
+  const { onRequest, messages, isRequesting, abort, onReload, setMessage, setMessages } =
     useXChat<ChatMessage>({
       provider: providerFactory(conversationId),
       conversationKey: conversationId,
@@ -58,9 +91,45 @@ export default function ChatPage() {
       },
     });
 
+  React.useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const onSubmit = useCallback(
+    (value: string) => {
+      if (!value && pastedImages.length === 0) return;
+      const isApprovalCommand =
+        pastedImages.length === 0 && APPROVE_COMMAND_RE.test(value.trim());
+      const content =
+        pastedImages.length > 0
+          ? [
+              ...pastedImages.map((img) => ({
+                type: "image_url" as const,
+                image_url: { url: img.dataUrl },
+              })),
+              ...(value ? [{ type: "text" as const, text: value }] : []),
+            ]
+          : value;
+      onRequest({ messages: [{ role: "user", content }] });
+      if (isApprovalCommand) {
+        approvalPollUntilRef.current =
+          Date.now() + APPROVAL_FOLLOWUP_POLL_WINDOW_MS;
+        setApprovalPollingToken((current) => current + 1);
+      }
+      setPastedImages([]);
+      listRef.current?.scrollTo({ top: "bottom" });
+    },
+    [onRequest, pastedImages],
+  );
+
   const chatContextValue = useMemo(
-    () => ({ onReload, setMessage }),
-    [onReload, setMessage],
+    () => ({
+      onReload,
+      setMessage,
+      onQuickSubmit: onSubmit,
+      isRequesting,
+    }),
+    [isRequesting, onReload, onSubmit, setMessage],
   );
 
   // 请求完成后更新侧边栏标题
@@ -76,25 +145,84 @@ export default function ChatPage() {
     prevRequestingRef.current = isRequesting;
   }, [isRequesting, conversationId, updateConversationTitle]);
 
-  const onSubmit = useCallback(
-    (value: string) => {
-      if (!value && pastedImages.length === 0) return;
-      const content =
-        pastedImages.length > 0
-          ? [
-              ...pastedImages.map((img) => ({
-                type: "image_url" as const,
-                image_url: { url: img.dataUrl },
-              })),
-              ...(value ? [{ type: "text" as const, text: value }] : []),
-            ]
-          : value;
-      onRequest({ messages: [{ role: "user", content }] });
-      setPastedImages([]);
-      listRef.current?.scrollTo({ top: "bottom" });
-    },
-    [onRequest, pastedImages],
-  );
+  React.useEffect(() => {
+    if (isRequesting || approvalPollingToken === 0) return;
+    if (
+      !approvalPollUntilRef.current ||
+      Date.now() >= approvalPollUntilRef.current
+    ) {
+      approvalPollUntilRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncFollowupMessages = async () => {
+      if (
+        cancelled ||
+        !approvalPollUntilRef.current ||
+        Date.now() >= approvalPollUntilRef.current
+      ) {
+        approvalPollUntilRef.current = null;
+        return;
+      }
+
+      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
+        cache: "no-store",
+      });
+      if (!response.ok || cancelled) return;
+
+      const data: Array<{ id: string; role: string; content: string }> =
+        await response.json();
+      if (cancelled) return;
+
+      const fetchedMessages = data.map((msg) => ({
+        id: msg.id,
+        status: "success" as const,
+        message: {
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+        },
+      }));
+      const currentMessages = messagesRef.current;
+      const currentTurns = toComparableTurns(currentMessages);
+      const fetchedTurns = toComparableTurns(fetchedMessages);
+
+      let matched = 0;
+      while (
+        matched < currentTurns.length &&
+        matched < fetchedTurns.length &&
+        currentTurns[matched]?.role === fetchedTurns[matched]?.role &&
+        currentTurns[matched]?.content === fetchedTurns[matched]?.content
+      ) {
+        matched += 1;
+      }
+
+      if (matched === currentTurns.length) {
+        const missingMessages = fetchedMessages.slice(matched);
+        if (missingMessages.length > 0) {
+          const nextMessages = [...currentMessages, ...missingMessages];
+          messagesRef.current = nextMessages;
+          setMessages(nextMessages);
+          listRef.current?.scrollTo({ top: "bottom" });
+        }
+        return;
+      }
+
+      messagesRef.current = fetchedMessages;
+      setMessages(fetchedMessages);
+    };
+
+    void syncFollowupMessages();
+    const timer = window.setInterval(() => {
+      void syncFollowupMessages();
+    }, APPROVAL_FOLLOWUP_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [approvalPollingToken, conversationId, isRequesting, setMessages]);
 
   return (
     <ChatContext.Provider value={chatContextValue}>
