@@ -6,9 +6,6 @@ import type { BubbleListRef } from "@ant-design/x/es/bubble";
 import type { useXChat } from "@ant-design/x-sdk";
 
 import type { ChatMessage } from "../types";
-
-// TODO: GuideChat 暂时不显示，后续启用
-// import GuideChat from "./GuideChat";
 import { getBubbleRole } from "./MarkdownMessageParts";
 
 type ChatMessages = ReturnType<typeof useXChat<ChatMessage>>["messages"];

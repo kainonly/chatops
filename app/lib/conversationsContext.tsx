@@ -1,20 +1,18 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import dayjs from "dayjs";
 
 export type ConversationItem = {
   key: string;
-  label: string;
+  label: React.ReactNode;
   group: string;
 };
 
 interface ConversationsContextValue {
   conversations: ConversationItem[];
-  sideCollapsed: boolean;
-  setSideCollapsed: (v: boolean) => void;
   handleActiveChange: (key: string) => void;
   handleAddConversation: () => Promise<void>;
   handleDeleteConversation: (key: string) => Promise<void>;
@@ -23,26 +21,31 @@ interface ConversationsContextValue {
 
 const ConversationsContext = createContext<ConversationsContextValue | null>(null);
 
+function toConversationItem(conversation: {
+  id: string;
+  title: string;
+  createdAt: string;
+}): ConversationItem {
+  return {
+    key: conversation.id,
+    label: conversation.title,
+    group: dayjs(conversation.createdAt).isSame(dayjs(), "day")
+      ? "今天"
+      : dayjs(conversation.createdAt).format("YYYY-MM-DD"),
+  };
+}
+
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const router = useRouter();
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [sideCollapsed, setSideCollapsed] = useState(false);
 
   useEffect(() => {
     if (!session?.user?.id) return;
     fetch("/api/conversations")
       .then((r) => r.json())
       .then((data: Array<{ id: string; title: string; createdAt: string }>) => {
-        setConversations(
-          data.map((c) => ({
-            key: c.id,
-            label: c.title,
-            group: dayjs(c.createdAt).isSame(dayjs(), "day")
-              ? "今天"
-              : dayjs(c.createdAt).format("YYYY-MM-DD"),
-          })),
-        );
+        setConversations(data.map(toConversationItem));
       });
   }, [session?.user?.id]);
 
@@ -53,9 +56,13 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
 
   const handleAddConversation = useCallback(async () => {
     const res = await fetch("/api/conversations", { method: "POST" });
-    const data = await res.json();
+    const data: { id: string; title: string; createdAt?: string } = await res.json();
     setConversations((prev) => [
-      { key: data.id, label: data.title, group: "今天" },
+      toConversationItem({
+        id: data.id,
+        title: data.title,
+        createdAt: data.createdAt ?? new Date().toISOString(),
+      }),
       ...prev,
     ]);
     router.push(`/chat/${data.id}`);
@@ -80,18 +87,25 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     );
   }, []);
 
+  const value = useMemo(
+    () => ({
+      conversations,
+      handleActiveChange,
+      handleAddConversation,
+      handleDeleteConversation,
+      updateConversationTitle,
+    }),
+    [
+      conversations,
+      handleActiveChange,
+      handleAddConversation,
+      handleDeleteConversation,
+      updateConversationTitle,
+    ],
+  );
+
   return (
-    <ConversationsContext.Provider
-      value={{
-        conversations,
-        sideCollapsed,
-        setSideCollapsed,
-        handleActiveChange,
-        handleAddConversation,
-        handleDeleteConversation,
-        updateConversationTitle,
-      }}
-    >
+    <ConversationsContext.Provider value={value}>
       {children}
     </ConversationsContext.Provider>
   );

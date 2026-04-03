@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
-import SessionProviderWrapper from "./lib/components/SessionProviderWrapper";
+import { SessionProvider } from "next-auth/react";
 
 import "./globals.css";
 import "./chat.css";
@@ -19,7 +19,7 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <AntdRegistry>
-          <SessionProviderWrapper>{children}</SessionProviderWrapper>
+          <SessionProvider>{children}</SessionProvider>
         </AntdRegistry>
       </body>
     </html>

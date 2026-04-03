@@ -84,6 +84,100 @@ import { ChatContext } from "../context";
 import { extractApprovalContent } from "../approval";
 import type { ChatMessage } from "../types";
 
+type UserMessagePart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+function normalizeAssistantContent(content: string): string {
+  const approvalContent = extractApprovalContent(content);
+
+  return (approvalContent?.content ?? content).replace(
+    /((?:^[ \t]*(?:[-*+]|\d+\.)[ \t]+.+\n))\n(?=[ \t]*(?:[-*+]|\d+\.)[ \t]+)/gm,
+    "$1",
+  );
+}
+
+function renderMarkdownLink(href: string | undefined, children: React.ReactNode) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
+
+function renderMarkdownCode(params: {
+  className?: string;
+  children: React.ReactNode;
+  streamStatus?: string;
+}) {
+  const { className, children, streamStatus } = params;
+  const codeLang = /language-(\w+)/.exec(className ?? "")?.[1];
+
+  if (streamStatus === "loading" && ["g2", "mermaid", "file"].includes(codeLang ?? "")) {
+    return null;
+  }
+
+  if (codeLang === "g2") {
+    return <G2Chart config={String(children).trim()} />;
+  }
+
+  if (codeLang === "mermaid") {
+    return <Mermaid>{String(children)}</Mermaid>;
+  }
+
+  if (codeLang === "file") {
+    try {
+      const { url, name } = JSON.parse(String(children).trim());
+      return <FileCard href={url}>{name}</FileCard>;
+    } catch {
+      return <code className={className}>{children}</code>;
+    }
+  }
+
+  if (codeLang) {
+    return <CodeHighlighter lang={codeLang}>{String(children)}</CodeHighlighter>;
+  }
+
+  return <code className={className}>{children}</code>;
+}
+
+function renderUserMessageContent(content: ChatMessage["content"]) {
+  if (typeof content === "string") return <span>{content}</span>;
+
+  const parts = content as UserMessagePart[];
+  const imageParts = parts.filter(
+    (part): part is Extract<UserMessagePart, { type: "image_url" }> =>
+      part.type === "image_url",
+  );
+  const textParts = parts.filter(
+    (part): part is Extract<UserMessagePart, { type: "text" }> =>
+      part.type === "text",
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+      {imageParts.length > 0 ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {imageParts.map((part, index) => (
+            <Image
+              key={index}
+              src={part.image_url.url}
+              alt={`上传图片 ${index + 1}`}
+              width={300}
+              height={200}
+              unoptimized
+              style={{ maxHeight: 200, maxWidth: 300, borderRadius: 6, objectFit: "cover" }}
+            />
+          ))}
+        </div>
+      ) : null}
+      {textParts.map((part, index) => (
+        <span key={index}>{part.text}</span>
+      ))}
+    </div>
+  );
+}
+
 // 渲染 AI 回复中的 <think> 标签
 const ThinkComponent = React.memo(function ThinkComponent(
   props: ComponentProps,
@@ -192,58 +286,22 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
       />
     ),
     contentRender: (content: string, { status }) => {
-      // 列表项之间的空行会触发 Markdown loose list（每项套 <p>），导致间距过大
-      // 将列表项（- 或数字.）之间的空行压缩掉
-      const approvalContent = extractApprovalContent(content);
-      const normalized = (approvalContent?.content ?? content).replace(
-        /((?:^[ \t]*(?:[-*+]|\d+\.)[ \t]+.+\n))\n(?=[ \t]*(?:[-*+]|\d+\.)[ \t]+)/gm,
-        "$1",
-      );
       return (
         <XMarkdown
           paragraphTag="div"
           components={{
             think: ThinkComponent,
-            a: ({ href, children }) => {
-              const resolvedHref = typeof href === "string" ? href : undefined;
-              return (
-                <a
-                  href={resolvedHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {children}
-                </a>
-              );
-            },
-            code: ({ className: cls, children, streamStatus }) => {
-              const codeLang = /language-(\w+)/.exec(cls ?? "")?.[1];
-              if (codeLang === "g2") {
-                if (streamStatus === "loading") return null;
-                return <G2Chart config={String(children).trim()} />;
-              }
-              if (codeLang === "mermaid") {
-                if (streamStatus === "loading") return null;
-                return <Mermaid>{String(children)}</Mermaid>;
-              }
-              if (codeLang === "file") {
-                if (streamStatus === "loading") return null;
-                try {
-                  const { url, name } = JSON.parse(String(children).trim());
-                  return <FileCard href={url}>{name}</FileCard>;
-                } catch {
-                  return <code className={cls}>{children}</code>;
-                }
-              }
-              if (codeLang) {
-                return (
-                  <CodeHighlighter lang={codeLang}>
-                    {String(children)}
-                  </CodeHighlighter>
-                );
-              }
-              return <code className={cls}>{children}</code>;
-            },
+            a: ({ href, children }) =>
+              renderMarkdownLink(
+                typeof href === "string" ? href : undefined,
+                children,
+              ),
+            code: ({ className: markdownClassName, children, streamStatus }) =>
+              renderMarkdownCode({
+                className: markdownClassName,
+                children,
+                streamStatus,
+              }),
           }}
           className={className}
           streaming={{
@@ -251,45 +309,13 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
             enableAnimation: true,
           }}
         >
-          {normalized}
+          {normalizeAssistantContent(content)}
         </XMarkdown>
       );
     },
   },
   user: {
     placement: "end",
-    contentRender: (content) => {
-      if (typeof content === "string") return <span>{content}</span>;
-      const parts = content as Array<
-        | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
-      >;
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-          {parts.filter((p) => p.type === "image_url").length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {parts
-                .filter((p) => p.type === "image_url")
-                .map((p, i) => (
-                  <Image
-                    key={i}
-                    src={(p as { type: "image_url"; image_url: { url: string } }).image_url.url}
-                    alt={`上传图片 ${i + 1}`}
-                    width={300}
-                    height={200}
-                    unoptimized
-                    style={{ maxHeight: 200, maxWidth: 300, borderRadius: 6, objectFit: "cover" }}
-                  />
-                ))}
-            </div>
-          )}
-          {parts
-            .filter((p) => p.type === "text")
-            .map((p, i) => (
-              <span key={i}>{(p as { type: "text"; text: string }).text}</span>
-            ))}
-        </div>
-      );
-    },
+    contentRender: renderUserMessageContent,
   },
 });

@@ -3,7 +3,6 @@
 import React from "react";
 import {
   DeleteOutlined,
-  EditOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -14,14 +13,7 @@ import {
 import { Conversations } from "@ant-design/x";
 import { Avatar, Button, Popconfirm } from "antd";
 import { signOut } from "next-auth/react";
-import type { MessageInstance } from "antd/es/message/interface";
-
-type ConversationItem = {
-  key: string;
-  label?: React.ReactNode;
-  group?: string;
-  [key: string]: unknown;
-};
+import type { ConversationItem } from "../conversationsContext";
 
 interface ChatSidebarProps {
   conversations: ConversationItem[];
@@ -29,7 +21,6 @@ interface ChatSidebarProps {
   onActiveChange: (key: string) => void;
   onAddConversation: () => void;
   onDeleteConversation: (key: string) => void;
-  messageApi: MessageInstance;
   avatarUrl?: string;
   collapsed?: boolean;
   onCollapse?: () => void;
@@ -41,7 +32,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onActiveChange,
   onAddConversation,
   onDeleteConversation,
-  messageApi,
   avatarUrl,
   collapsed = false,
   onCollapse,

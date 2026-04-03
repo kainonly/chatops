@@ -1,12 +1,9 @@
 import type { DefaultMessageInfo } from "@ant-design/x-sdk";
 import type { ChatMessage } from "./types";
 
-function getMessagesUrl(conversationKey: string): string {
+function resolveMessagesUrl(conversationKey: string): string {
   const path = `/api/conversations/${conversationKey}/messages`;
-
-  if (typeof window !== "undefined") {
-    return path;
-  }
+  if (typeof window !== "undefined") return path;
 
   const baseUrl = process.env.AUTH_URL;
   if (!baseUrl) {
@@ -23,7 +20,7 @@ export const historyMessageFactory = async ({
 }): Promise<DefaultMessageInfo<ChatMessage>[]> => {
   if (!conversationKey) return [];
 
-  const res = await fetch(getMessagesUrl(conversationKey));
+  const res = await fetch(resolveMessagesUrl(conversationKey));
   if (!res.ok) return [];
 
   const data: Array<{ id: string; role: string; content: string }> =

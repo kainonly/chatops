@@ -11,6 +11,7 @@ import React, {
 import { CloudUploadOutlined, CloseOutlined, PaperClipOutlined } from "@ant-design/icons";
 import { Attachments, Prompts, Sender } from "@ant-design/x";
 import { Button, Flex, type GetProp } from "antd";
+import Image from "next/image";
 
 import { SENDER_PROMPTS } from "../config";
 
@@ -28,7 +29,7 @@ interface ChatComposerProps {
   onAbort: () => void;
   onAttachmentsOpenChange: (open: boolean) => void;
   onAttachedFilesChange: (files: GetProp<typeof Attachments, "items">) => void;
-  onPastedImagesChange: (images: PastedImage[]) => void;
+  onPastedImagesChange: React.Dispatch<React.SetStateAction<PastedImage[]>>;
   onPromptClick: (value: string) => void;
 }
 
@@ -67,15 +68,15 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
         const reader = new FileReader();
         reader.onload = (ev) => {
           const dataUrl = ev.target?.result as string;
-          onPastedImagesChange([
-            ...pastedImages,
+          onPastedImagesChange((current) => [
+            ...current,
             { dataUrl, name: file.name || `image-${Date.now()}.png` },
           ]);
         };
         reader.readAsDataURL(file);
       });
     },
-    [pastedImages, onPastedImagesChange],
+    [onPastedImagesChange],
   );
 
   useEffect(() => {
@@ -85,9 +86,12 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
     return () => el.removeEventListener("paste", handlePaste);
   }, [handlePaste]);
 
-  const removeImage = (index: number) => {
-    onPastedImagesChange(pastedImages.filter((_, i) => i !== index));
-  };
+  const removeImage = useCallback(
+    (index: number) => {
+      onPastedImagesChange((current) => current.filter((_, i) => i !== index));
+    },
+    [onPastedImagesChange],
+  );
 
   const handleSubmit = useCallback(() => {
     onSubmit(value);
@@ -151,7 +155,13 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
         <Flex gap={8} wrap className="app-sender app-pasted-images">
           {pastedImages.map((img, i) => (
             <div key={i} className="app-pasted-image-item">
-              <img src={img.dataUrl} alt={img.name} />
+              <Image
+                src={img.dataUrl}
+                alt={img.name}
+                width={240}
+                height={160}
+                unoptimized
+              />
               <Button
                 type="text"
                 size="small"

@@ -1,13 +1,11 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { message } from "antd";
 import { useSession } from "next-auth/react";
 import zhCN from "antd/locale/zh_CN";
 import zhCN_X from "@ant-design/x/locale/zh_CN";
 import { XProvider } from "@ant-design/x";
-import { useMemo } from "react";
 
 import ChatSidebar from "../lib/components/ChatSidebar";
 import { ConversationsProvider, useConversations } from "../lib/conversationsContext";
@@ -16,12 +14,10 @@ function ChatLayoutInner({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
-  const [messageApi, contextHolder] = message.useMessage();
+  const [sideCollapsed, setSideCollapsed] = useState(false);
 
   const {
     conversations,
-    sideCollapsed,
-    setSideCollapsed,
     handleActiveChange,
     handleAddConversation,
     handleDeleteConversation,
@@ -48,7 +44,6 @@ function ChatLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <XProvider locale={locale}>
-      {contextHolder}
       <div className="app-layout">
         <ChatSidebar
           conversations={conversations}
@@ -56,7 +51,6 @@ function ChatLayoutInner({ children }: { children: React.ReactNode }) {
           onActiveChange={handleActiveChange}
           onAddConversation={handleAddConversation}
           onDeleteConversation={handleDelete}
-          messageApi={messageApi}
           avatarUrl={session?.user?.image ?? undefined}
           collapsed={sideCollapsed}
           onCollapse={() => setSideCollapsed(!sideCollapsed)}

@@ -13,22 +13,60 @@ const OPENCLAW_API_URL = process.env.OPENCLAW_API_URL!;
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN!;
 const execFileAsync = promisify(execFile);
 
-function buildStreamingTextResponse(content: string) {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        encoder.encode(
-          `data: ${JSON.stringify({
-            choices: [{ delta: { content } }],
-          })}\n\n`,
-        ),
-      );
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
-    },
-  });
+type ChatRequestMessage = {
+  role: string;
+  content: string;
+};
 
+type OpenClawRequestParams = {
+  conversationId?: string;
+  model?: string;
+  messages: Array<{ role: string; content: unknown }>;
+  stream: boolean;
+};
+
+function jsonErrorResponse(error: string, status: number) {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function buildOpenClawHeaders(params: {
+  conversationId?: string;
+  model?: string;
+}) {
+  const { conversationId, model } = params;
+
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${OPENCLAW_TOKEN}`,
+    ...(conversationId
+      ? {
+          "x-openclaw-session-key": getOpenClawSessionKey(conversationId),
+          "x-openclaw-message-channel": "webchat",
+        }
+      : {}),
+    ...(model ? { "x-openclaw-model": model } : {}),
+  };
+}
+
+async function callOpenClaw(params: OpenClawRequestParams) {
+  const { conversationId, model, messages, stream } = params;
+
+  return await fetch(OPENCLAW_API_URL, {
+    method: "POST",
+    headers: buildOpenClawHeaders({ conversationId, model }),
+    body: JSON.stringify({
+      ...(model ? { model } : {}),
+      messages,
+      stream,
+      user: conversationId,
+    }),
+  });
+}
+
+function createEventStreamResponse(stream: ReadableStream) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
@@ -36,6 +74,152 @@ function buildStreamingTextResponse(content: string) {
       Connection: "keep-alive",
     },
   });
+}
+
+async function parseAssistantContentFromStream(response: Response) {
+  const reader = response.body!.getReader();
+  let assistantContent = "";
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        controller.enqueue(value);
+
+        const text = new TextDecoder().decode(value);
+        for (const line of text.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+
+          const data = line.slice(5).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const json = JSON.parse(data);
+            const delta = json.choices?.[0]?.delta?.content;
+            if (delta) assistantContent += delta;
+          } catch {
+            // 忽略解析失败的行
+          }
+        }
+      }
+
+      controller.close();
+    },
+  });
+
+  return { stream, getAssistantContent: () => assistantContent };
+}
+
+async function ensureConversationAccess(params: {
+  conversationId?: string;
+  userId: string;
+}) {
+  const { conversationId, userId } = params;
+  if (!conversationId) {
+    return { isFirstMessage: false };
+  }
+
+  const [conversation, messageCount] = await Promise.all([
+    prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+    }),
+    prisma.message.count({ where: { conversationId } }),
+  ]);
+
+  if (!conversation) {
+    throw new Error("会话不存在");
+  }
+
+  return { isFirstMessage: messageCount === 0 };
+}
+
+async function persistConversationReply(params: {
+  conversationId?: string;
+  lastUserMessage?: ChatRequestMessage;
+  assistantContent: string;
+  isFirstMessage: boolean;
+}) {
+  const { conversationId, lastUserMessage, assistantContent, isFirstMessage } = params;
+  if (!conversationId || !assistantContent) return;
+
+  await prisma.$transaction([
+    ...(lastUserMessage
+      ? [
+          prisma.message.create({
+            data: {
+              conversationId,
+              role: "user",
+              content: lastUserMessage.content,
+            },
+          }),
+        ]
+      : []),
+    prisma.message.create({
+      data: { conversationId, role: "assistant", content: assistantContent },
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() },
+    }),
+  ]);
+
+  if (isFirstMessage && lastUserMessage) {
+    generateTitle(lastUserMessage.content).then((title) =>
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { title },
+      }),
+    );
+  }
+}
+
+async function streamOpenClawChat(params: {
+  conversationId?: string;
+  model?: string;
+  reqMessages: Array<{ role: string; content: unknown }>;
+  lastUserMessage?: ChatRequestMessage;
+  isFirstMessage: boolean;
+}) {
+  const { conversationId, model, reqMessages, lastUserMessage, isFirstMessage } =
+    params;
+  const response = await callOpenClaw({
+    conversationId,
+    model,
+    messages: reqMessages,
+    stream: true,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    return jsonErrorResponse(errorText || "OpenClaw 请求失败", response.status);
+  }
+
+  const { stream, getAssistantContent } =
+    await parseAssistantContentFromStream(response);
+  const trackedStream = new ReadableStream({
+    async start(controller) {
+      const reader = stream.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        controller.enqueue(value);
+      }
+
+      await persistConversationReply({
+        conversationId,
+        lastUserMessage,
+        assistantContent: getAssistantContent(),
+        isFirstMessage,
+      });
+
+      controller.close();
+    },
+  });
+
+  return createEventStreamResponse(trackedStream);
 }
 
 async function resolveApprovalViaGateway(rawCommand: string) {
@@ -92,45 +276,24 @@ async function forwardApprovalCommandToOpenClaw(params: {
 }) {
   const { conversationId, rawCommand, model } = params;
 
-  return await fetch(OPENCLAW_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENCLAW_TOKEN}`,
-      ...(conversationId
-        ? {
-            "x-openclaw-session-key": getOpenClawSessionKey(conversationId),
-            "x-openclaw-message-channel": "webchat",
-          }
-        : {}),
-      ...(model ? { "x-openclaw-model": model } : {}),
-    },
-    body: JSON.stringify({
-      ...(model ? { model } : {}),
-      messages: [{ role: "user", content: rawCommand }],
-      stream: true,
-      user: conversationId,
-    }),
+  return await callOpenClaw({
+    conversationId,
+    model,
+    messages: [{ role: "user", content: rawCommand }],
+    stream: true,
   });
 }
 
 async function generateTitle(userMessage: string): Promise<string> {
   try {
-    const res = await fetch(OPENCLAW_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENCLAW_TOKEN}`,
-      },
-      body: JSON.stringify({
-        stream: false,
-        messages: [
-          {
-            role: "user",
-            content: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
-          },
-        ],
-      }),
+    const res = await callOpenClaw({
+      messages: [
+        {
+          role: "user",
+          content: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
+        },
+      ],
+      stream: false,
     });
     if (!res.ok) return "新对话";
     const data = await res.json();
@@ -140,160 +303,75 @@ async function generateTitle(userMessage: string): Promise<string> {
   }
 }
 
+async function handleApprovalRequest(params: {
+  conversationId?: string;
+  model?: string;
+  lastUserMessage?: ChatRequestMessage;
+}) {
+  const { conversationId, model, lastUserMessage } = params;
+  if (typeof lastUserMessage?.content !== "string") {
+    return null;
+  }
+
+  const approvalResolution = await resolveApprovalViaGateway(
+    lastUserMessage.content,
+  );
+  if (!approvalResolution) return null;
+
+  const forwardedResponse = await forwardApprovalCommandToOpenClaw({
+    conversationId,
+    rawCommand: lastUserMessage.content,
+    model,
+  });
+
+  if (!forwardedResponse.ok) {
+    const errorText = await forwardedResponse.text();
+    return jsonErrorResponse(
+      errorText || "审批已提交，但续跑 OpenClaw 失败",
+      forwardedResponse.status,
+    );
+  }
+
+  return forwardedResponse;
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   const body = await req.json();
   const { conversationId, messages: reqMessages = [], model } = body;
 
-  // 验证会话属于当前用户，同时获取当前消息数
   let isFirstMessage = false;
-  if (conversationId) {
-    const [conversation, messageCount] = await Promise.all([
-      prisma.conversation.findFirst({
-        where: { id: conversationId, userId: session!.user!.id! },
-      }),
-      prisma.message.count({ where: { conversationId } }),
-    ]);
-    if (!conversation) {
-      return new Response(JSON.stringify({ error: "会话不存在" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    isFirstMessage = messageCount === 0;
+  try {
+    ({ isFirstMessage } = await ensureConversationAccess({
+      conversationId,
+      userId: session!.user!.id!,
+    }));
+  } catch (error) {
+    return jsonErrorResponse(
+      error instanceof Error ? error.message : "会话不存在",
+      404,
+    );
   }
 
   const lastUserMessage = [...reqMessages]
     .reverse()
-    .find((m: { role: string }) => m.role === "user");
-  const approvalResolution =
-    typeof lastUserMessage?.content === "string"
-      ? await resolveApprovalViaGateway(lastUserMessage.content)
-      : null;
-
-  if (approvalResolution) {
-    const forwardedResponse = await forwardApprovalCommandToOpenClaw({
-      conversationId,
-      rawCommand: lastUserMessage.content,
-      model,
-    });
-
-    if (!forwardedResponse.ok) {
-      const errorText = await forwardedResponse.text();
-      return new Response(
-        JSON.stringify({ error: errorText || "审批已提交，但续跑 OpenClaw 失败" }),
-        {
-          status: forwardedResponse.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    return forwardedResponse;
+    .find((m: { role: string }) => m.role === "user") as
+      | ChatRequestMessage
+      | undefined;
+  const approvalResponse = await handleApprovalRequest({
+    conversationId,
+    model,
+    lastUserMessage,
+  });
+  if (approvalResponse) {
+    return approvalResponse;
   }
 
-  const response = await fetch(OPENCLAW_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENCLAW_TOKEN}`,
-      ...(conversationId
-        ? {
-            "x-openclaw-session-key": getOpenClawSessionKey(conversationId),
-            "x-openclaw-message-channel": "webchat",
-          }
-        : {}),
-      ...(model ? { "x-openclaw-model": model } : {}),
-    },
-    body: JSON.stringify({
-      ...(model ? { model } : {}),
-      messages: reqMessages,
-      stream: true,
-      user: conversationId,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    return new Response(
-      JSON.stringify({ error: errorText || "OpenClaw 请求失败" }),
-      {
-        status: response.status,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  const reader = response.body!.getReader();
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      let assistantContent = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        controller.enqueue(value);
-
-        const text = new TextDecoder().decode(value);
-        for (const line of text.split("\n")) {
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (data === "[DONE]") continue;
-          try {
-            const json = JSON.parse(data);
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) assistantContent += delta;
-          } catch {
-            // 忽略解析失败的行
-          }
-        }
-      }
-
-      // 保存消息
-      if (conversationId && assistantContent) {
-        await prisma.$transaction([
-          ...(lastUserMessage
-            ? [
-                prisma.message.create({
-                  data: {
-                    conversationId,
-                    role: "user",
-                    content: lastUserMessage.content,
-                  },
-                }),
-              ]
-            : []),
-          prisma.message.create({
-            data: { conversationId, role: "assistant", content: assistantContent },
-          }),
-          prisma.conversation.update({
-            where: { id: conversationId },
-            data: { updatedAt: new Date() },
-          }),
-        ]);
-
-        // 第一条消息：异步生成标题（不阻塞流）
-        if (isFirstMessage && lastUserMessage) {
-          generateTitle(lastUserMessage.content).then((title) =>
-            prisma.conversation.update({
-              where: { id: conversationId },
-              data: { title },
-            }),
-          );
-        }
-      }
-
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
+  return await streamOpenClawChat({
+    conversationId,
+    model,
+    reqMessages,
+    lastUserMessage,
+    isFirstMessage,
   });
 }

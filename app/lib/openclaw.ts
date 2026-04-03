@@ -34,6 +34,14 @@ type TranscriptTurn = {
   content: string;
 };
 
+type SessionTranscriptEntry = {
+  type?: string;
+  message?: {
+    role?: string;
+    content?: string | Array<{ type?: string; text?: string }>;
+  };
+};
+
 const CONTEXT_WRAPPER_RE = /^\[Chat messages since your last reply - for context\]/i;
 const CURRENT_MESSAGE_WRAPPER_RE = /^\[Current message - respond to this\]/i;
 const ASYNC_COMPLETION_WRAPPER_RE =
@@ -62,6 +70,17 @@ function shouldSkipLocalOnlyMessage(turn: TranscriptTurn): boolean {
   );
 }
 
+function isVisibleTranscriptTurn(turn: TranscriptTurn): boolean {
+  return turn.content.length > 0 && !shouldHideTranscriptTurn(turn);
+}
+
+function toComparableTurn(turn: TranscriptTurn): TranscriptTurn {
+  return {
+    role: turn.role,
+    content: normalizeVisibleText(turn.content),
+  };
+}
+
 export function shouldHideTranscriptTurn(turn: TranscriptTurn): boolean {
   if (!turn.content.trim()) return true;
 
@@ -88,31 +107,39 @@ async function readSessionStore(): Promise<Record<string, SessionStoreEntry>> {
 async function readTranscriptTurns(sessionFile: string): Promise<TranscriptTurn[]> {
   try {
     const raw = await fs.readFile(sessionFile, "utf8");
-    return raw
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as {
-        type?: string;
-        message?: {
-          role?: string;
-          content?: string | Array<{ type?: string; text?: string }>;
-        };
-      })
-      .filter(
-        (entry) =>
-          entry.type === "message" &&
-          (entry.message?.role === "user" || entry.message?.role === "assistant"),
-      )
-      .map((entry) => ({
-        role: entry.message!.role as "user" | "assistant",
-        content: extractTextParts(entry.message?.content ?? ""),
-      }))
-      .filter((entry) => entry.content.length > 0)
-      .filter((entry) => !shouldHideTranscriptTurn(entry));
+    return parseTranscriptTurns(raw);
   } catch {
     return [];
   }
+}
+
+function parseTranscriptTurns(raw: string): TranscriptTurn[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as SessionTranscriptEntry)
+    .filter(isMessageTranscriptEntry)
+    .map((entry) => ({
+      role: entry.message.role,
+      content: extractTextParts(entry.message.content ?? ""),
+    }))
+    .filter(isVisibleTranscriptTurn);
+}
+
+function isMessageTranscriptEntry(
+  entry: SessionTranscriptEntry,
+): entry is SessionTranscriptEntry & {
+  type: "message";
+  message: {
+    role: "user" | "assistant";
+    content?: string | Array<{ type?: string; text?: string }>;
+  };
+} {
+  return (
+    entry.type === "message" &&
+    (entry.message?.role === "user" || entry.message?.role === "assistant")
+  );
 }
 
 export async function loadGatewayConfig(): Promise<GatewayConfig> {
@@ -146,30 +173,32 @@ export async function getOpenClawSessionFile(conversationId: string): Promise<st
   return entry?.sessionFile ?? null;
 }
 
-export async function syncConversationMessagesFromOpenClaw(
+async function readComparableDbTurns(
   conversationId: string,
-): Promise<number> {
-  const sessionFile = await getOpenClawSessionFile(conversationId);
-  if (!sessionFile) return 0;
-
-  const transcriptTurns = await readTranscriptTurns(sessionFile);
-  if (!transcriptTurns.length) return 0;
-
+): Promise<TranscriptTurn[]> {
   const dbMessages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
     select: { role: true, content: true },
   });
 
-  const comparableDbTurns = dbMessages
+  return dbMessages
     .map((message) => ({
       role: message.role as "user" | "assistant",
-      content: normalizeVisibleText(message.content),
+      content: message.content,
     }))
+    .map(toComparableTurn)
     .filter((turn) => !shouldSkipLocalOnlyMessage(turn))
-    .filter((turn) => !shouldHideTranscriptTurn(turn));
+    .filter(isVisibleTranscriptTurn);
+}
 
+function findMissingTranscriptTurns(params: {
+  transcriptTurns: TranscriptTurn[];
+  comparableDbTurns: TranscriptTurn[];
+}) {
+  const { transcriptTurns, comparableDbTurns } = params;
   let matched = 0;
+
   while (
     matched < comparableDbTurns.length &&
     matched < transcriptTurns.length &&
@@ -179,11 +208,17 @@ export async function syncConversationMessagesFromOpenClaw(
     matched += 1;
   }
 
-  const missingTurns = transcriptTurns.slice(matched);
-  if (!missingTurns.length) return 0;
+  return transcriptTurns.slice(matched);
+}
+
+async function appendTranscriptTurns(
+  conversationId: string,
+  turns: TranscriptTurn[],
+): Promise<number> {
+  if (!turns.length) return 0;
 
   await prisma.message.createMany({
-    data: missingTurns.map((turn) => ({
+    data: turns.map((turn) => ({
       conversationId,
       role: turn.role,
       content: turn.content,
@@ -195,5 +230,23 @@ export async function syncConversationMessagesFromOpenClaw(
     data: { updatedAt: new Date() },
   });
 
-  return missingTurns.length;
+  return turns.length;
+}
+
+export async function syncConversationMessagesFromOpenClaw(
+  conversationId: string,
+): Promise<number> {
+  const sessionFile = await getOpenClawSessionFile(conversationId);
+  if (!sessionFile) return 0;
+
+  const transcriptTurns = await readTranscriptTurns(sessionFile);
+  if (!transcriptTurns.length) return 0;
+
+  const comparableDbTurns = await readComparableDbTurns(conversationId);
+  const missingTurns = findMissingTranscriptTurns({
+    transcriptTurns,
+    comparableDbTurns,
+  });
+
+  return await appendTranscriptTurns(conversationId, missingTurns);
 }
