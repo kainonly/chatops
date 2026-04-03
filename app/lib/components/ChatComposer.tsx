@@ -13,7 +13,18 @@ import { Attachments, Prompts, Sender } from "@ant-design/x";
 import { Button, Flex, type GetProp } from "antd";
 import Image from "next/image";
 
-import { SENDER_PROMPTS } from "../config";
+type PromptItem = { key: string; label: string };
+
+function usePrompts() {
+  const [prompts, setPrompts] = React.useState<PromptItem[]>([]);
+  React.useEffect(() => {
+    fetch("/api/prompts")
+      .then((r) => r.json())
+      .then((data: PromptItem[]) => setPrompts(data))
+      .catch(() => {});
+  }, []);
+  return prompts;
+}
 
 export interface PastedImage {
   dataUrl: string;
@@ -47,6 +58,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
 }) => {
   const senderRef = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState("");
+  const prompts = usePrompts();
 
   const speechReady = useSyncExternalStore(
     () => () => {},
@@ -107,9 +119,33 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
         styles={{ content: { padding: 0 } }}
       >
         <Attachments
-          beforeUpload={() => false}
           items={attachedFiles}
           onChange={(info) => onAttachedFilesChange(info.fileList)}
+          customRequest={async ({ file, onSuccess, onError, onProgress }) => {
+            const formData = new FormData();
+            formData.append("file", file as File);
+            try {
+              const xhr = new XMLHttpRequest();
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                  onProgress?.({ percent: (e.loaded / e.total) * 100 });
+                }
+              };
+              const res = await fetch("/api/upload", {
+                method: "POST",
+                body: formData,
+              });
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: "上传失败" }));
+                onError?.(new Error(err.error || "上传失败"));
+                return;
+              }
+              const data = await res.json();
+              onSuccess?.(data);
+            } catch (err) {
+              onError?.(err instanceof Error ? err : new Error("上传失败"));
+            }
+          }}
           placeholder={(type) =>
             type === "drop"
               ? { title: "将文件拖到此处" }
@@ -143,11 +179,11 @@ const ChatComposer: React.FC<ChatComposerProps> = ({
 
   return (
     <Flex vertical gap={12} align="center" style={{ margin: 8 }} ref={senderRef}>
-      {!attachmentsOpen && (
+      {!attachmentsOpen && prompts.length > 0 && (
         <Prompts
-          items={SENDER_PROMPTS}
-          onItemClick={(info) => onPromptClick(info.data.description as string)}
-          styles={{ item: { padding: "6px 12px" } }}
+          items={prompts}
+          onItemClick={(info) => onPromptClick(info.data.label as string)}
+          styles={{ item: { padding: "6px 12px" }, list: { justifyContent: "center" } }}
           className="app-sender-prompt"
         />
       )}

@@ -1,14 +1,5 @@
 "use client";
 
-import {
-} from "@ant-design/icons";
-import type { Prompts } from "@ant-design/x";
-import type { GetProp } from "antd";
-
-// 输入框上方的快捷提示词
-export const SENDER_PROMPTS: GetProp<typeof Prompts, "items"> = [
-];
-
 // 思维链状态映射
 export const THOUGHT_CHAIN_CONFIG = {
   loading: { title: "正在调用模型", status: "loading" },

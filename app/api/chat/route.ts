@@ -287,21 +287,30 @@ async function forwardApprovalCommandToOpenClaw(params: {
 }
 
 async function generateTitle(userMessage: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const res = await callOpenClaw({
-      messages: [
-        {
-          role: "user",
-          content: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
-        },
-      ],
-      stream: false,
+    const res = await fetch(OPENCLAW_API_URL, {
+      method: "POST",
+      headers: buildOpenClawHeaders({}),
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
+          },
+        ],
+        stream: false,
+      }),
+      signal: controller.signal,
     });
     if (!res.ok) return "新对话";
     const data = await res.json();
     return data.choices?.[0]?.message?.content?.trim() || "新对话";
   } catch {
     return "新对话";
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

@@ -20,6 +20,10 @@ const OPENCLAW_SESSIONS_PATH = path.join(
 );
 const REPLY_TO_CURRENT_RE = /^\[\[reply_to_current\]\]\s*/;
 
+// 同一会话 10s 内不重复触发 Transcript 同步，避免频繁读取大文件
+const syncThrottle = new Map<string, number>();
+const SYNC_THROTTLE_MS = 10_000;
+
 type GatewayConfig = {
   port: number;
   token: string;
@@ -236,6 +240,10 @@ async function appendTranscriptTurns(
 export async function syncConversationMessagesFromOpenClaw(
   conversationId: string,
 ): Promise<number> {
+  const lastSync = syncThrottle.get(conversationId);
+  if (lastSync && Date.now() - lastSync < SYNC_THROTTLE_MS) return 0;
+  syncThrottle.set(conversationId, Date.now());
+
   const sessionFile = await getOpenClawSessionFile(conversationId);
   if (!sessionFile) return 0;
 

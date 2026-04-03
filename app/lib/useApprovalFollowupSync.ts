@@ -7,7 +7,8 @@ import type { useXChat } from "@ant-design/x-sdk";
 import { toComparableTurns } from "./chatMessageUtils";
 import type { ChatMessage } from "./types";
 
-const APPROVAL_FOLLOWUP_POLL_MS = 2500;
+const APPROVAL_FOLLOWUP_INITIAL_DELAY_MS = 2500;
+const APPROVAL_FOLLOWUP_MAX_DELAY_MS = 15_000;
 const APPROVAL_FOLLOWUP_POLL_WINDOW_MS = 90_000;
 
 type ChatMessages = ReturnType<typeof useXChat<ChatMessage>>["messages"];
@@ -101,14 +102,27 @@ export function useApprovalFollowupSync(params: {
       setMessages(fetchedMessages);
     };
 
+    let delay = APPROVAL_FOLLOWUP_INITIAL_DELAY_MS;
+    let timerId: number;
+
+    const scheduleNext = () => {
+      if (cancelled || !approvalPollUntilRef.current || Date.now() >= approvalPollUntilRef.current) {
+        approvalPollUntilRef.current = null;
+        return;
+      }
+      timerId = window.setTimeout(async () => {
+        await syncFollowupMessages();
+        delay = Math.min(delay * 2, APPROVAL_FOLLOWUP_MAX_DELAY_MS);
+        scheduleNext();
+      }, delay);
+    };
+
     void syncFollowupMessages();
-    const timer = window.setInterval(() => {
-      void syncFollowupMessages();
-    }, APPROVAL_FOLLOWUP_POLL_MS);
+    scheduleNext();
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      clearTimeout(timerId);
     };
   }, [approvalPollingToken, conversationId, isRequesting, listRef, setMessages]);
 

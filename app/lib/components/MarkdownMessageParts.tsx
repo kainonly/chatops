@@ -12,6 +12,9 @@ import {
   GlobalOutlined,
   SyncOutlined,
   DownloadOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
 } from "@ant-design/icons";
 import type {
   ActionsFeedbackProps,
@@ -21,7 +24,7 @@ import type {
 import { Actions, CodeHighlighter, Think, ThoughtChain } from "@ant-design/x";
 import type { ComponentProps } from "@ant-design/x-markdown";
 import XMarkdown from "@ant-design/x-markdown";
-import { message, Pagination } from "antd";
+import { Button, message, Pagination, Space } from "antd";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 
@@ -144,7 +147,7 @@ function renderMarkdownCode(params: {
 function renderUserMessageContent(content: ChatMessage["content"]) {
   if (typeof content === "string") return <span>{content}</span>;
 
-  const parts = content as UserMessagePart[];
+  const parts = content as unknown as UserMessagePart[];
   const imageParts = parts.filter(
     (part): part is Extract<UserMessagePart, { type: "image_url" }> =>
       part.type === "image_url",
@@ -198,6 +201,62 @@ const ThinkComponent = React.memo(function ThinkComponent(
     </Think>
   );
 });
+
+const APPROVAL_ACTIONS_MARKER = "[[APPROVAL_ACTIONS]]";
+
+// 审批交互卡片，替换消息中的 [[APPROVAL_ACTIONS]] 占位符
+const ApprovalCard: React.FC<{ requestId: string }> = ({ requestId }) => {
+  const context = React.useContext(ChatContext);
+  const submit = (decision: string) => {
+    context.onQuickSubmit?.(`/approve ${requestId} ${decision}`);
+  };
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: "10px 14px",
+        borderRadius: 8,
+        border: "1px solid #d9d9d9",
+        background: "#fafafa",
+        margin: "6px 0",
+      }}
+    >
+      <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+        工具执行请求 · ID: <code style={{ fontSize: 11 }}>{requestId}</code>
+      </span>
+      <Space>
+        <Button
+          size="small"
+          icon={<CheckCircleOutlined />}
+          onClick={() => submit("allow-once")}
+          disabled={context.isRequesting}
+        >
+          允许一次
+        </Button>
+        <Button
+          size="small"
+          icon={<ClockCircleOutlined />}
+          onClick={() => submit("allow-always")}
+          disabled={context.isRequesting}
+        >
+          总是允许
+        </Button>
+        <Button
+          size="small"
+          danger
+          icon={<CloseCircleOutlined />}
+          onClick={() => submit("deny")}
+          disabled={context.isRequesting}
+        >
+          拒绝
+        </Button>
+      </Space>
+    </div>
+  );
+};
 
 // AI 消息底部操作栏（loading/updating 时隐藏）
 const Footer: React.FC<{
@@ -286,28 +345,61 @@ export const getBubbleRole = (className: string): BubbleListProps["role"] => ({
       />
     ),
     contentRender: (content: string, { status }) => {
+      const mdComponents = {
+        think: ThinkComponent,
+        a: ({ href, children }: { href?: string; children?: React.ReactNode }) =>
+          renderMarkdownLink(typeof href === "string" ? href : undefined, children),
+        code: ({
+          className: markdownClassName,
+          children,
+          streamStatus,
+        }: {
+          className?: string;
+          children?: React.ReactNode;
+          streamStatus?: string;
+        }) =>
+          renderMarkdownCode({ className: markdownClassName, children, streamStatus }),
+      };
+      const streamingProps = {
+        hasNextChunk: status === "updating",
+        enableAnimation: true,
+      };
+
+      const approvalData = extractApprovalContent(content);
+      if (approvalData) {
+        const parts = approvalData.content.split(APPROVAL_ACTIONS_MARKER);
+        return (
+          <div>
+            {parts.map((part, i) => (
+              <React.Fragment key={i}>
+                {part.trim() && (
+                  <XMarkdown
+                    paragraphTag="div"
+                    components={mdComponents}
+                    className={className}
+                    streaming={streamingProps}
+                  >
+                    {part.replace(
+                      /((?:^[ \t]*(?:[-*+]|\d+\.)[ \t]+.+\n))\n(?=[ \t]*(?:[-*+]|\d+\.)[ \t]+)/gm,
+                      "$1",
+                    )}
+                  </XMarkdown>
+                )}
+                {i < parts.length - 1 && (
+                  <ApprovalCard requestId={approvalData.requestId} />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        );
+      }
+
       return (
         <XMarkdown
           paragraphTag="div"
-          components={{
-            think: ThinkComponent,
-            a: ({ href, children }) =>
-              renderMarkdownLink(
-                typeof href === "string" ? href : undefined,
-                children,
-              ),
-            code: ({ className: markdownClassName, children, streamStatus }) =>
-              renderMarkdownCode({
-                className: markdownClassName,
-                children,
-                streamStatus,
-              }),
-          }}
+          components={mdComponents}
           className={className}
-          streaming={{
-            hasNextChunk: status === "updating",
-            enableAnimation: true,
-          }}
+          streaming={streamingProps}
         >
           {normalizeAssistantContent(content)}
         </XMarkdown>

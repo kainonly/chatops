@@ -5,3 +5,4 @@ mcp.json
 .env
 .env.local
 .env*.local
+prompts.json

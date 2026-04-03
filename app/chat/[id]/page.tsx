@@ -71,27 +71,51 @@ export default function ChatPage() {
 
   const onSubmit = useCallback(
     (value: string) => {
-      if (!value && pastedImages.length === 0) return;
+      type UploadResponse = { url: string; name: string; path: string };
+      const isImageName = (name: string) => /\.(png|jpe?g|gif|webp)$/i.test(name);
+      const doneFiles = attachedFiles.filter((f) => f.status === "done");
+
+      if (!value && pastedImages.length === 0 && doneFiles.length === 0) return;
+
       const isApprovalRequest =
-        pastedImages.length === 0 && isApprovalCommand(value);
+        pastedImages.length === 0 && doneFiles.length === 0 && isApprovalCommand(value);
+
+      const imageParts = [
+        ...pastedImages.map((img) => ({
+          type: "image_url" as const,
+          image_url: { url: img.dataUrl },
+        })),
+        ...doneFiles
+          .filter((f) => isImageName(f.name))
+          .map((f) => ({
+            type: "image_url" as const,
+            image_url: { url: (f.response as UploadResponse).url },
+          })),
+      ];
+
+      const fileRefParts = doneFiles
+        .filter((f) => !isImageName(f.name))
+        .map((f) => ({
+          type: "text" as const,
+          text: `[已上传文件：${f.name}，路径：${(f.response as UploadResponse).path}]`,
+        }));
+
+      const textPart = value ? [{ type: "text" as const, text: value }] : [];
+      const allParts = [...imageParts, ...fileRefParts, ...textPart];
       const content =
-        pastedImages.length > 0
-          ? [
-              ...pastedImages.map((img) => ({
-                type: "image_url" as const,
-                image_url: { url: img.dataUrl },
-              })),
-              ...(value ? [{ type: "text" as const, text: value }] : []),
-            ]
-          : value;
+        allParts.length === 1 && allParts[0].type === "text"
+          ? allParts[0].text
+          : allParts;
+
       onRequest({ messages: [{ role: "user", content }] });
       if (isApprovalRequest) {
         markApprovalRequested();
       }
       setPastedImages([]);
+      setAttachedFiles([]);
       listRef.current?.scrollTo({ top: "bottom" });
     },
-    [markApprovalRequested, onRequest, pastedImages],
+    [attachedFiles, markApprovalRequested, onRequest, pastedImages, setAttachedFiles],
   );
 
   const chatContextValue = useMemo(
