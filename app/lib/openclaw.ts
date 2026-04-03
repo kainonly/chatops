@@ -3,6 +3,11 @@ import os from "node:os";
 import path from "node:path";
 
 import { prisma } from "./db";
+import {
+  APPROVAL_ACK_RE,
+  APPROVE_COMMAND_RE,
+  containsApprovalPrompt,
+} from "./approval";
 
 const OPENCLAW_CONFIG_PATH = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const OPENCLAW_SESSIONS_PATH = path.join(
@@ -13,9 +18,6 @@ const OPENCLAW_SESSIONS_PATH = path.join(
   "sessions",
   "sessions.json",
 );
-const APPROVE_COMMAND_RE =
-  /^\/approve(?:@[^\s]+)?\s+([A-Za-z0-9][A-Za-z0-9._:-]*)\s+(allow-once|allow-always|always|deny)\b/i;
-const APPROVAL_ACK_RE = /^✅ 审批已提交：/;
 const REPLY_TO_CURRENT_RE = /^\[\[reply_to_current\]\]\s*/;
 
 type GatewayConfig = {
@@ -31,6 +33,11 @@ type TranscriptTurn = {
   role: "user" | "assistant";
   content: string;
 };
+
+const CONTEXT_WRAPPER_RE = /^\[Chat messages since your last reply - for context\]/i;
+const CURRENT_MESSAGE_WRAPPER_RE = /^\[Current message - respond to this\]/i;
+const ASYNC_COMPLETION_WRAPPER_RE =
+  /^\[[A-Z][a-z]{2}\s+\d{4}-\d{2}-\d{2}.*\]\s+An async command/i;
 
 function normalizeVisibleText(content: string): string {
   return content.replace(REPLY_TO_CURRENT_RE, "").trim();
@@ -53,6 +60,20 @@ function shouldSkipLocalOnlyMessage(turn: TranscriptTurn): boolean {
     (turn.role === "user" && APPROVE_COMMAND_RE.test(turn.content)) ||
     (turn.role === "assistant" && APPROVAL_ACK_RE.test(turn.content))
   );
+}
+
+export function shouldHideTranscriptTurn(turn: TranscriptTurn): boolean {
+  if (!turn.content.trim()) return true;
+
+  if (turn.role === "user") {
+    return (
+      CONTEXT_WRAPPER_RE.test(turn.content) ||
+      CURRENT_MESSAGE_WRAPPER_RE.test(turn.content) ||
+      ASYNC_COMPLETION_WRAPPER_RE.test(turn.content)
+    );
+  }
+
+  return containsApprovalPrompt(turn.content);
 }
 
 async function readSessionStore(): Promise<Record<string, SessionStoreEntry>> {
@@ -87,7 +108,8 @@ async function readTranscriptTurns(sessionFile: string): Promise<TranscriptTurn[
         role: entry.message!.role as "user" | "assistant",
         content: extractTextParts(entry.message?.content ?? ""),
       }))
-      .filter((entry) => entry.content.length > 0);
+      .filter((entry) => entry.content.length > 0)
+      .filter((entry) => !shouldHideTranscriptTurn(entry));
   } catch {
     return [];
   }
@@ -117,7 +139,10 @@ export function getOpenClawSessionKey(conversationId: string): string {
 
 export async function getOpenClawSessionFile(conversationId: string): Promise<string | null> {
   const store = await readSessionStore();
-  const entry = store[getOpenClawSessionKey(conversationId)];
+  const sessionKey = getOpenClawSessionKey(conversationId);
+  const entry =
+    store[sessionKey] ??
+    store[`agent:main:${sessionKey}`];
   return entry?.sessionFile ?? null;
 }
 
@@ -141,7 +166,8 @@ export async function syncConversationMessagesFromOpenClaw(
       role: message.role as "user" | "assistant",
       content: normalizeVisibleText(message.content),
     }))
-    .filter((turn) => !shouldSkipLocalOnlyMessage(turn));
+    .filter((turn) => !shouldSkipLocalOnlyMessage(turn))
+    .filter((turn) => !shouldHideTranscriptTurn(turn));
 
   let matched = 0;
   while (

@@ -12,6 +12,7 @@ import type { BubbleListRef } from "@ant-design/x/es/bubble";
 import { useXChat } from "@ant-design/x-sdk";
 import { type GetProp } from "antd";
 
+import { containsApprovalPrompt, isApprovalCommand } from "../../lib/approval";
 import { historyMessageFactory } from "../../lib/chatHistory";
 import { providerFactory } from "../../lib/chatProvider";
 import ChatComposer, { type PastedImage } from "../../lib/components/ChatComposer";
@@ -24,8 +25,6 @@ import useMarkdownTheme from "../../lib/useMarkdownTheme";
 import "@ant-design/x-markdown/themes/dark.css";
 import "@ant-design/x-markdown/themes/light.css";
 
-const APPROVE_COMMAND_RE =
-  /^\/approve(?:@[^\s]+)?\s+[A-Za-z0-9][A-Za-z0-9._:-]*\s+(allow-once|allow-always|always|deny)\b/i;
 const APPROVAL_FOLLOWUP_POLL_MS = 2500;
 const APPROVAL_FOLLOWUP_POLL_WINDOW_MS = 90_000;
 
@@ -43,10 +42,26 @@ function toComparableText(content: ChatMessage["content"]): string {
     .trim();
 }
 
+function isHiddenApprovalMessage(message: {
+  role?: string;
+  content: ChatMessage["content"];
+}): boolean {
+  if (message.role === "assistant" && typeof message.content === "string") {
+    return containsApprovalPrompt(message.content);
+  }
+
+  return (
+    message.role === "user" &&
+    typeof message.content === "string" &&
+    isApprovalCommand(message.content)
+  );
+}
+
 function toComparableTurns(
   list: ReturnType<typeof useXChat<ChatMessage>>["messages"],
 ) {
   return list
+    .filter((item) => !isHiddenApprovalMessage(item.message))
     .map((item) => ({
       role: item.message.role,
       content: toComparableText(item.message.content),
@@ -98,8 +113,8 @@ export default function ChatPage() {
   const onSubmit = useCallback(
     (value: string) => {
       if (!value && pastedImages.length === 0) return;
-      const isApprovalCommand =
-        pastedImages.length === 0 && APPROVE_COMMAND_RE.test(value.trim());
+      const isApprovalRequest =
+        pastedImages.length === 0 && isApprovalCommand(value);
       const content =
         pastedImages.length > 0
           ? [
@@ -111,7 +126,7 @@ export default function ChatPage() {
             ]
           : value;
       onRequest({ messages: [{ role: "user", content }] });
-      if (isApprovalCommand) {
+      if (isApprovalRequest) {
         approvalPollUntilRef.current =
           Date.now() + APPROVAL_FOLLOWUP_POLL_WINDOW_MS;
         setApprovalPollingToken((current) => current + 1);
@@ -224,13 +239,18 @@ export default function ChatPage() {
     };
   }, [approvalPollingToken, conversationId, isRequesting, setMessages]);
 
+  const visibleMessages = useMemo(
+    () => messages.filter((item) => !isHiddenApprovalMessage(item.message)),
+    [messages],
+  );
+
   return (
     <ChatContext.Provider value={chatContextValue}>
       <div key={conversationId} className="app-chat-page">
       <ChatMessageList
         className={className}
         listRef={listRef}
-        messages={messages}
+        messages={visibleMessages}
       />
       <ChatComposer
         loading={isRequesting}

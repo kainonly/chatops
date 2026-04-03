@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../auth";
 import { prisma } from "../../../../lib/db";
-import { syncConversationMessagesFromOpenClaw } from "../../../../lib/openclaw";
+import {
+  shouldHideTranscriptTurn,
+  syncConversationMessagesFromOpenClaw,
+} from "../../../../lib/openclaw";
 
 export async function GET(
   _req: NextRequest,
@@ -26,5 +29,13 @@ export async function GET(
     select: { id: true, role: true, content: true, thinking: true, feedback: true },
   });
 
-  return NextResponse.json(messages);
+  return NextResponse.json(
+    messages.filter(
+      (message) =>
+        !shouldHideTranscriptTurn({
+          role: message.role as "user" | "assistant",
+          content: message.content,
+        }),
+    ),
+  );
 }

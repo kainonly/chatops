@@ -7,12 +7,11 @@ import {
   getOpenClawSessionKey,
   loadGatewayConfig,
 } from "../../lib/openclaw";
+import { APPROVE_COMMAND_RE } from "../../lib/approval";
 
 const OPENCLAW_API_URL = process.env.OPENCLAW_API_URL!;
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN!;
 const execFileAsync = promisify(execFile);
-const APPROVE_COMMAND_RE =
-  /^\/approve(?:@[^\s]+)?\s+([A-Za-z0-9][A-Za-z0-9._:-]*)\s+(allow-once|allow-always|always|deny)\b/i;
 
 function buildStreamingTextResponse(content: string) {
   const encoder = new TextEncoder();
@@ -86,6 +85,35 @@ async function resolveApprovalViaGateway(rawCommand: string) {
   };
 }
 
+async function forwardApprovalCommandToOpenClaw(params: {
+  conversationId?: string;
+  rawCommand: string;
+  model?: string;
+}) {
+  const { conversationId, rawCommand, model } = params;
+
+  return await fetch(OPENCLAW_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENCLAW_TOKEN}`,
+      ...(conversationId
+        ? {
+            "x-openclaw-session-key": getOpenClawSessionKey(conversationId),
+            "x-openclaw-message-channel": "webchat",
+          }
+        : {}),
+      ...(model ? { "x-openclaw-model": model } : {}),
+    },
+    body: JSON.stringify({
+      ...(model ? { model } : {}),
+      messages: [{ role: "user", content: rawCommand }],
+      stream: true,
+      user: conversationId,
+    }),
+  });
+}
+
 async function generateTitle(userMessage: string): Promise<string> {
   try {
     const res = await fetch(OPENCLAW_API_URL, {
@@ -144,28 +172,24 @@ export async function POST(req: NextRequest) {
       : null;
 
   if (approvalResolution) {
-    const assistantContent = `✅ 审批已提交：${approvalResolution.approvalId} ${approvalResolution.decision}`;
+    const forwardedResponse = await forwardApprovalCommandToOpenClaw({
+      conversationId,
+      rawCommand: lastUserMessage.content,
+      model,
+    });
 
-    if (conversationId && lastUserMessage) {
-      await prisma.$transaction([
-        prisma.message.create({
-          data: {
-            conversationId,
-            role: "user",
-            content: lastUserMessage.content,
-          },
-        }),
-        prisma.message.create({
-          data: { conversationId, role: "assistant", content: assistantContent },
-        }),
-        prisma.conversation.update({
-          where: { id: conversationId },
-          data: { updatedAt: new Date() },
-        }),
-      ]);
+    if (!forwardedResponse.ok) {
+      const errorText = await forwardedResponse.text();
+      return new Response(
+        JSON.stringify({ error: errorText || "审批已提交，但续跑 OpenClaw 失败" }),
+        {
+          status: forwardedResponse.status,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
-    return buildStreamingTextResponse(assistantContent);
+    return forwardedResponse;
   }
 
   const response = await fetch(OPENCLAW_API_URL, {
