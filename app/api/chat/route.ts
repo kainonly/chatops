@@ -82,30 +82,32 @@ async function parseAssistantContentFromStream(response: Response) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        controller.enqueue(value);
+          controller.enqueue(value);
 
-        const text = new TextDecoder().decode(value);
-        for (const line of text.split("\n")) {
-          if (!line.startsWith("data:")) continue;
+          const text = new TextDecoder().decode(value);
+          for (const line of text.split("\n")) {
+            if (!line.startsWith("data:")) continue;
 
-          const data = line.slice(5).trim();
-          if (data === "[DONE]") continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") continue;
 
-          try {
-            const json = JSON.parse(data);
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) assistantContent += delta;
-          } catch {
-            // 忽略解析失败的行
+            try {
+              const json = JSON.parse(data);
+              const delta = json.choices?.[0]?.delta?.content;
+              if (delta) assistantContent += delta;
+            } catch {
+              // 忽略解析失败的行
+            }
           }
         }
+      } finally {
+        controller.close();
       }
-
-      controller.close();
     },
   });
 

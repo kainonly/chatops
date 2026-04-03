@@ -23,12 +23,16 @@ export const historyMessageFactory = async ({
   const res = await fetch(resolveMessagesUrl(conversationKey));
   if (!res.ok) return [];
 
-  const data: Array<{ id: string; role: string; content: string }> =
+  const data: Array<{ id: string; role: string; content: string; thinking?: string }> =
     await res.json();
 
   return data.map((msg) => ({
     id: msg.id,
     status: "success" as const,
-    message: { role: msg.role as "user" | "assistant", content: msg.content },
+    message: {
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+      ...(msg.thinking ? { thinking: msg.thinking } : {}),
+    },
   }));
 };

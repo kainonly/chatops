@@ -40,10 +40,14 @@ export async function PATCH(
   const { id } = await params;
   const { title } = await req.json();
 
-  const conversation = await prisma.conversation.updateMany({
+  const result = await prisma.conversation.updateMany({
     where: { id, userId: session!.user!.id! },
     data: { title },
   });
 
-  return NextResponse.json(conversation);
+  if (result.count === 0) {
+    return NextResponse.json({ error: "会话不存在" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
