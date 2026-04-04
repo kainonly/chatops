@@ -8,6 +8,7 @@ import {
   loadGatewayConfig,
 } from "../../lib/openclaw";
 import { APPROVE_COMMAND_RE } from "../../lib/approval";
+import { normalizeFileMarkdown } from "../../lib/fileMarkdown";
 
 const OPENCLAW_API_URL = process.env.OPENCLAW_API_URL!;
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN!;
@@ -145,6 +146,7 @@ async function persistConversationReply(params: {
 }) {
   const { conversationId, lastUserMessage, assistantContent, isFirstMessage } = params;
   if (!conversationId || !assistantContent) return;
+  const normalizedAssistantContent = normalizeFileMarkdown(assistantContent);
 
   await prisma.$transaction([
     ...(lastUserMessage
@@ -159,7 +161,7 @@ async function persistConversationReply(params: {
         ]
       : []),
     prisma.message.create({
-      data: { conversationId, role: "assistant", content: assistantContent },
+      data: { conversationId, role: "assistant", content: normalizedAssistantContent },
     }),
     prisma.conversation.update({
       where: { id: conversationId },

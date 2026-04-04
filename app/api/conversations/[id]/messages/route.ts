@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../auth";
 import { prisma } from "../../../../lib/db";
+import { normalizeFileMarkdown } from "../../../../lib/fileMarkdown";
 import {
   shouldHideTranscriptTurn,
   syncConversationMessagesFromOpenClaw,
@@ -30,12 +31,20 @@ export async function GET(
   });
 
   return NextResponse.json(
-    messages.filter(
-      (message) =>
-        !shouldHideTranscriptTurn({
-          role: message.role as "user" | "assistant",
-          content: message.content,
-        }),
-    ),
+    messages
+      .filter(
+        (message) =>
+          !shouldHideTranscriptTurn({
+            role: message.role as "user" | "assistant",
+            content: message.content,
+          }),
+      )
+      .map((message) => ({
+        ...message,
+        content:
+          message.role === "assistant"
+            ? normalizeFileMarkdown(message.content)
+            : message.content,
+      })),
   );
 }

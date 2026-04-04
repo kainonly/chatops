@@ -8,6 +8,7 @@ import {
   APPROVE_COMMAND_RE,
   containsApprovalPrompt,
 } from "./approval";
+import { normalizeFileMarkdown } from "./fileMarkdown";
 
 const OPENCLAW_CONFIG_PATH = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const OPENCLAW_SESSIONS_PATH = path.join(
@@ -52,7 +53,7 @@ const ASYNC_COMPLETION_WRAPPER_RE =
   /^\[[A-Z][a-z]{2}\s+\d{4}-\d{2}-\d{2}.*\]\s+An async command/i;
 
 function normalizeVisibleText(content: string): string {
-  return content.replace(REPLY_TO_CURRENT_RE, "").trim();
+  return normalizeFileMarkdown(content.replace(REPLY_TO_CURRENT_RE, "").trim());
 }
 
 function extractTextParts(
@@ -199,7 +200,7 @@ async function readComparableDbTurns(
 function findMissingTranscriptTurns(params: {
   transcriptTurns: TranscriptTurn[];
   comparableDbTurns: TranscriptTurn[];
-}) {
+}): TranscriptTurn[] {
   const { transcriptTurns, comparableDbTurns } = params;
   let matched = 0;
 
@@ -211,6 +212,10 @@ function findMissingTranscriptTurns(params: {
   ) {
     matched += 1;
   }
+
+  // DB 里的条数还没被 transcript 全部匹配完，说明两个数据源对不齐（内容格式差异等），
+  // 此时不能追加，否则会重复写入。
+  if (matched < comparableDbTurns.length) return [];
 
   return transcriptTurns.slice(matched);
 }

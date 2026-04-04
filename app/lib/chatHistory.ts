@@ -1,4 +1,5 @@
 import type { DefaultMessageInfo } from "@ant-design/x-sdk";
+import { normalizeFileMarkdown } from "./fileMarkdown";
 import type { ChatMessage } from "./types";
 
 function resolveMessagesUrl(conversationKey: string): string {
@@ -31,7 +32,7 @@ export const historyMessageFactory = async ({
     status: "success" as const,
     message: {
       role: msg.role as "user" | "assistant",
-      content: msg.content,
+      content: msg.role === "assistant" ? normalizeFileMarkdown(msg.content) : msg.content,
       ...(msg.thinking ? { thinking: msg.thinking } : {}),
     },
   }));
