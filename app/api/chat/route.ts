@@ -23,7 +23,6 @@ type OpenClawRequestParams = {
   conversationId?: string;
   model?: string;
   messages: Array<{ role: string; content: unknown }>;
-  stream: boolean;
 };
 
 function jsonErrorResponse(error: string, status: number) {
@@ -52,17 +51,34 @@ function buildOpenClawHeaders(params: {
   };
 }
 
+function extractInputText(messages: Array<{ role: string; content: unknown }>): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return "";
+  const content = lastUser.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((p): p is { type: string; text: string } => p?.type === "text")
+      .map((p) => p.text)
+      .join("");
+  }
+  return String(content);
+}
+
 async function callOpenClaw(params: OpenClawRequestParams) {
-  const { conversationId, model, messages, stream } = params;
+  const { conversationId, model, messages } = params;
+
+  const systemMessage = messages.find((m) => m.role === "system");
+  const input = extractInputText(messages);
 
   return await fetch(OPENCLAW_API_URL, {
     method: "POST",
     headers: buildOpenClawHeaders({ conversationId, model }),
     body: JSON.stringify({
-      ...(model ? { model } : {}),
-      messages,
-      stream,
-      user: conversationId,
+      model: model ?? "openclaw",
+      ...(systemMessage ? { instructions: systemMessage.content } : {}),
+      input,
+      stream: true,
     }),
   });
 }
@@ -77,9 +93,26 @@ function createEventStreamResponse(stream: ReadableStream) {
   });
 }
 
+function responsesEventToChatCompletionChunk(json: Record<string, unknown>): string | null {
+  // response.output_text.delta → extract text delta
+  if (json.type === "response.output_text.delta") {
+    const delta = (json as { delta?: string }).delta ?? "";
+    const chunk = {
+      choices: [{ delta: { content: delta }, index: 0, finish_reason: null }],
+    };
+    return `data: ${JSON.stringify(chunk)}\n\n`;
+  }
+  // response.completed → send [DONE]
+  if (json.type === "response.completed") {
+    return "data: [DONE]\n\n";
+  }
+  return null;
+}
+
 async function parseAssistantContentFromStream(response: Response) {
   const reader = response.body!.getReader();
   let assistantContent = "";
+  const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -88,19 +121,27 @@ async function parseAssistantContentFromStream(response: Response) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          controller.enqueue(value);
-
           const text = new TextDecoder().decode(value);
           for (const line of text.split("\n")) {
             if (!line.startsWith("data:")) continue;
 
             const data = line.slice(5).trim();
-            if (data === "[DONE]") continue;
+            if (data === "[DONE]") {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              continue;
+            }
 
             try {
-              const json = JSON.parse(data);
-              const delta = json.choices?.[0]?.delta?.content;
-              if (delta) assistantContent += delta;
+              const json = JSON.parse(data) as Record<string, unknown>;
+              const converted = responsesEventToChatCompletionChunk(json);
+              if (converted) {
+                // accumulate text delta for persistence
+                const delta = (json as { delta?: string }).delta;
+                if (json.type === "response.output_text.delta" && delta) {
+                  assistantContent += delta;
+                }
+                controller.enqueue(encoder.encode(converted));
+              }
             } catch {
               // 忽略解析失败的行
             }
@@ -138,31 +179,34 @@ async function ensureConversationAccess(params: {
   return { isFirstMessage: messageCount === 0 };
 }
 
-async function persistConversationReply(params: {
+async function persistConversationTurn(params: {
   conversationId?: string;
   lastUserMessage?: ChatRequestMessage;
   assistantContent: string;
   isFirstMessage: boolean;
 }) {
   const { conversationId, lastUserMessage, assistantContent, isFirstMessage } = params;
-  if (!conversationId || !assistantContent) return;
-  const normalizedAssistantContent = normalizeFileMarkdown(assistantContent);
+  if (!conversationId) return;
+
+  const normalizedAssistantContent = assistantContent
+    ? normalizeFileMarkdown(assistantContent)
+    : "";
 
   await prisma.$transaction([
     ...(lastUserMessage
       ? [
           prisma.message.create({
-            data: {
-              conversationId,
-              role: "user",
-              content: lastUserMessage.content,
-            },
+            data: { conversationId, role: "user", content: lastUserMessage.content },
           }),
         ]
       : []),
-    prisma.message.create({
-      data: { conversationId, role: "assistant", content: normalizedAssistantContent },
-    }),
+    ...(normalizedAssistantContent
+      ? [
+          prisma.message.create({
+            data: { conversationId, role: "assistant", content: normalizedAssistantContent },
+          }),
+        ]
+      : []),
     prisma.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: new Date() },
@@ -192,7 +236,6 @@ async function streamOpenClawChat(params: {
     conversationId,
     model,
     messages: reqMessages,
-    stream: true,
   });
 
   if (!response.ok) {
@@ -206,20 +249,21 @@ async function streamOpenClawChat(params: {
     async start(controller) {
       const reader = stream.getReader();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        controller.enqueue(value);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+      } finally {
+        await persistConversationTurn({
+          conversationId,
+          lastUserMessage,
+          assistantContent: getAssistantContent(),
+          isFirstMessage,
+        });
+        controller.close();
       }
-
-      await persistConversationReply({
-        conversationId,
-        lastUserMessage,
-        assistantContent: getAssistantContent(),
-        isFirstMessage,
-      });
-
-      controller.close();
     },
   });
 
@@ -284,7 +328,6 @@ async function forwardApprovalCommandToOpenClaw(params: {
     conversationId,
     model,
     messages: [{ role: "user", content: rawCommand }],
-    stream: true,
   });
 }
 
@@ -296,19 +339,15 @@ async function generateTitle(userMessage: string): Promise<string> {
       method: "POST",
       headers: buildOpenClawHeaders({}),
       body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
-          },
-        ],
+        model: "openclaw",
+        input: `请根据以下对话内容，生成一个简短的会话标题（不超过15个字，不要引号和标点）：\n\n${userMessage}`,
         stream: false,
       }),
       signal: controller.signal,
     });
     if (!res.ok) return "新对话";
     const data = await res.json();
-    return data.choices?.[0]?.message?.content?.trim() || "新对话";
+    return data.output?.[0]?.content?.[0]?.text?.trim() || "新对话";
   } catch {
     return "新对话";
   } finally {
@@ -349,15 +388,18 @@ async function handleApprovalRequest(params: {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  const body = await req.json();
+  const [session, body] = await Promise.all([auth(), req.json()]);
+  if (!session?.user?.id) {
+    return jsonErrorResponse("未登录", 401);
+  }
+
   const { conversationId, messages: reqMessages = [], model } = body;
 
   let isFirstMessage = false;
   try {
     ({ isFirstMessage } = await ensureConversationAccess({
       conversationId,
-      userId: session!.user!.id!,
+      userId: session.user.id,
     }));
   } catch (error) {
     return jsonErrorResponse(

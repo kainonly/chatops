@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import type { Attachments } from "@ant-design/x";
 import type { BubbleListRef } from "@ant-design/x/es/bubble";
 import { useXChat } from "@ant-design/x-sdk";
@@ -29,6 +29,7 @@ import "@ant-design/x-markdown/themes/light.css";
 
 export default function ChatPage() {
   const params = useParams();
+  const router = useRouter();
   const conversationId = params.id as string;
   const { updateConversationTitle } = useConversations();
 
@@ -53,6 +54,10 @@ export default function ChatPage() {
             content: messageInfo?.message?.content || "请求已中止",
             role: "assistant",
           };
+        }
+        if (error.message?.includes("401")) {
+          router.push("/login");
+          return { content: "", role: "assistant" };
         }
         return {
           content: errorInfo?.error?.message || "请求失败，请重试！",
